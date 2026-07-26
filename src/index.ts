@@ -1,66 +1,146 @@
-type BinanceTicker = {
+type BybitTicker = {
   symbol: string;
   lastPrice: string;
-  priceChangePercent: string;
-  quoteVolume: string;
+  price24hPcnt: string;
+  turnover24h: string;
+  fundingRate?: string;
+  openInterest?: string;
+  openInterestValue?: string;
 };
 
-type MarketItem = {
-  symbol: string;
-  price: string;
-  change: number;
-  score: number;
+type BybitResponse = {
+  retCode: number;
+  retMsg: string;
+  result?: {
+    category: string;
+    list: BybitTicker[];
+  };
 };
 
-function jsonResponse(data: unknown, status = 200): Response {
+function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
       "cache-control": "no-store",
+      "access-control-allow-origin": "*",
     },
   });
 }
 
-async function getBinanceDashboard() {
-  const response = await fetch("https://fapi.binance.com/fapi/v1/ticker/24hr");
-  if (!response.ok) throw new Error(`Binance API hatası: ${response.status}`);
+function numberOrZero(value: string | undefined): number {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
 
-  const raw = (await response.json()) as BinanceTicker[];
+function clamp(value: number, min = 0, max = 100): number {
+  return Math.max(min, Math.min(max, value));
+}
 
-  const coins = raw
+function buildScore(
+  changePct: number,
+  turnover: number,
+  fundingRate: number,
+  openInterestValue: number,
+) {
+  const momentum = clamp(Math.abs(changePct) * 5, 0, 35);
+  const liquidity = clamp((Math.log10(Math.max(turnover, 1)) - 6) * 10, 0, 30);
+  const oi = clamp((Math.log10(Math.max(openInterestValue, 1)) - 5) * 8, 0, 20);
+  const fundingHealth = clamp(15 - Math.abs(fundingRate * 10000) * 1.5, 0, 15);
+
+  return Math.round(clamp(momentum + liquidity + oi + fundingHealth));
+}
+
+async function getBybitDashboard() {
+  const endpoint =
+    "https://api.bybit.com/v5/market/tickers?category=linear";
+
+  const response = await fetch(endpoint, {
+    headers: {
+      accept: "application/json",
+      "user-agent": "SihirbazAI/0.2",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Bybit API hatası: HTTP ${response.status}`);
+  }
+
+  const payload = (await response.json()) as BybitResponse;
+
+  if (payload.retCode !== 0 || !payload.result?.list) {
+    throw new Error(
+      `Bybit API yanıtı geçersiz: ${payload.retMsg || payload.retCode}`,
+    );
+  }
+
+  const coins = payload.result.list
     .filter((item) => item.symbol.endsWith("USDT"))
-    .filter((item) => !item.symbol.startsWith("1000"))
-    .filter((item) => Number(item.quoteVolume) >= 10_000_000)
     .map((item) => {
-      const change = Number(item.priceChangePercent);
-      const volume = Number(item.quoteVolume);
-      const momentum = Math.min(Math.abs(change) * 6, 55);
-      const liquidity = Math.min(Math.max(Math.log10(Math.max(volume, 1)) - 6, 0) * 12, 45);
-      const score = Math.max(1, Math.min(100, Math.round(momentum + liquidity)));
+      const price = numberOrZero(item.lastPrice);
+      const changePct = numberOrZero(item.price24hPcnt) * 100;
+      const turnover = numberOrZero(item.turnover24h);
+      const fundingRate = numberOrZero(item.fundingRate);
+      const openInterestValue =
+        numberOrZero(item.openInterestValue) ||
+        numberOrZero(item.openInterest) * price;
 
       return {
         symbol: item.symbol,
-        price: Number(item.lastPrice).toLocaleString("en-US", { maximumFractionDigits: 8 }),
-        change,
-        longScore: change > 0 ? score : 0,
-        shortScore: change < 0 ? score : 0,
+        price,
+        change: changePct,
+        turnover,
+        fundingRate,
+        openInterestValue,
+        score: buildScore(
+          changePct,
+          turnover,
+          fundingRate,
+          openInterestValue,
+        ),
       };
-    });
+    })
+    .filter((item) => item.price > 0)
+    .filter((item) => item.turnover >= 10_000_000);
 
-  const toItem = (item: typeof coins[number], score: number): MarketItem => ({
+  const toPublic = (item: (typeof coins)[number]) => ({
     symbol: item.symbol,
-    price: item.price,
+    price: item.price.toLocaleString("en-US", {
+      maximumFractionDigits: 8,
+    }),
     change: item.change,
-    score,
+    score: item.score,
+    fundingRate: item.fundingRate * 100,
+    openInterestValue: item.openInterestValue,
+    turnover24h: item.turnover,
   });
 
   return {
+    ok: true,
+    version: "0.2.0",
+    exchange: "Bybit Futures",
+    sourceType: "cloudflare-worker-live",
+    apiSource: "api.bybit.com",
     coinCount: coins.length,
-    updatedAt: new Date().toLocaleTimeString("tr-TR"),
-    long: coins.filter(x => x.longScore > 0).sort((a,b) => b.longScore-a.longScore).slice(0,10).map(x => toItem(x,x.longScore)),
-    short: coins.filter(x => x.shortScore > 0).sort((a,b) => b.shortScore-a.shortScore).slice(0,10).map(x => toItem(x,x.shortScore)),
-    scoringNote: "Geçici skor: 24 saatlik fiyat değişimi ve hacim.",
+    updatedAt: new Date().toISOString(),
+    updatedAtDisplay: new Date().toLocaleString("tr-TR", {
+      timeZone: "Europe/Istanbul",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }),
+    long: coins
+      .filter((item) => item.change > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10)
+      .map(toPublic),
+    short: coins
+      .filter((item) => item.change < 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10)
+      .map(toPublic),
+    scoringNote:
+      "İlk Bybit skoru: momentum, 24s likidite, açık pozisyon değeri ve funding sağlığı.",
   };
 }
 
@@ -70,17 +150,27 @@ export default {
 
     if (url.pathname === "/api/dashboard") {
       try {
-        return jsonResponse(await getBinanceDashboard());
+        return json(await getBybitDashboard());
       } catch (error) {
-        return jsonResponse({
-          error: true,
-          message: error instanceof Error ? error.message : "Bilinmeyen hata",
-        }, 500);
+        return json(
+          {
+            ok: false,
+            error:
+              error instanceof Error ? error.message : "Bilinmeyen hata",
+          },
+          502,
+        );
       }
     }
 
     if (url.pathname === "/api/health") {
-      return jsonResponse({ ok: true, service: "sihirbaz-ai", time: new Date().toISOString() });
+      return json({
+        ok: true,
+        service: "sihirbaz-ai",
+        exchange: "Bybit Futures",
+        version: "0.2.0",
+        time: new Date().toISOString(),
+      });
     }
 
     return new Response("Not Found", { status: 404 });
