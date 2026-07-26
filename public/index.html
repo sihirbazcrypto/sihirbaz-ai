@@ -48,7 +48,7 @@
     .chart-tab.active{border-color:var(--cyan);color:var(--cyan)}
     .chart-legend{display:flex;gap:12px;flex-wrap:wrap;margin:9px 0;color:var(--muted);font-size:12px}
     .legend-dot{display:inline-block;width:10px;height:3px;margin-right:5px;vertical-align:middle}
-    .ai-box{background:linear-gradient(135deg,#10243b,#102031);border:1px solid #31506f;border-radius:12px;padding:15px;line-height:1.55;white-space:pre-line}
+    .ai-box{white-space:pre-line;background:linear-gradient(135deg,#10243b,#102031);border:1px solid #31506f;border-radius:12px;padding:15px;line-height:1.55;white-space:pre-line}
     .ai-loading{color:var(--cyan)}
 
 
@@ -56,7 +56,19 @@
     .ai-meta-box{background:#0b1a2a;border:1px solid #29425e;border-radius:9px;padding:9px}
     .ai-meta-box .value{font-size:14px;margin-top:4px}
 
+
+    .interactive-chart{height:560px;position:relative}
+    .chart-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+    .tf-btn{padding:7px 12px;border:1px solid #2b405d;background:#102037;color:#cbd8e8;border-radius:8px;cursor:pointer}
+    .tf-btn.active{border-color:var(--cyan);color:var(--cyan)}
+    .level-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+    .level-box{background:#102037;border:1px solid var(--line);border-radius:9px;padding:10px}
+    .breakout-up{color:var(--green);font-weight:700}
+    .breakout-down{color:var(--red);font-weight:700}
+    .breakout-none{color:var(--orange)}
+
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
 <header class="topbar"><div class="brand">SİHİRBAZ <span>AI</span></div><div class="status" id="systemStatus">● Veri bekleniyor</div></header>
@@ -66,13 +78,18 @@
     <div class="menu-item">Open Interest</div><div class="menu-item">Funding</div><div class="menu-item">AI Analiz</div><div class="menu-item">Ayarlar</div>
   </aside>
   <main class="content">
-    <section class="hero"><h1>Sihirbaz Bağımsız AI Terminali</h1><p>Stoch RSI 5m/15m, EMA35/EMA200, Bollinger dönüşü, funding, OI, hacim ve aşırı hareket filtresi.</p></section>
-    <div class="filters"><select><option>Bybit Futures</option></select><select><option>Sihirbaz Terminal v0.7</option></select><button onclick="loadDashboard()">Yenile</button></div>
+    <section class="hero"><h1>Sihirbaz Pro Trader Terminali</h1><p>Bybit sunucu tarafı ve Binance tarayıcı tarafı teknik analiz, bağımsız AI ikinci görüş.</p></section>
+    <div class="filters"><select id="exchangeSelect" onchange="loadDashboard()">
+      <option value="bybit">Bybit Futures</option>
+      <option value="binance">Binance Futures</option>
+      <option value="mexc">MEXC Futures</option>
+      <option value="okx">OKX Perpetual</option>
+    </select><select><option>Sihirbaz Terminal v1.1</option></select><button onclick="loadDashboard()">Yenile</button></div>
     <section class="cards">
       <div class="card"><div class="label">Likiditesi Uygun Coin</div><div class="value" id="marketCount">-</div></div>
       <div class="card"><div class="label">Teknik Analiz Edilen</div><div class="value" id="analysedCount">-</div></div>
       <div class="card"><div class="label">Hazır Long / Short</div><div class="value" id="readyCount">-</div></div>
-      <div class="card"><div class="label">Son Güncelleme</div><div class="value" id="updatedAt">-</div><div class="subvalue">Kaynak: api.bybit.com</div></div>
+      <div class="card"><div class="label">Son Güncelleme</div><div class="value" id="updatedAt">-</div><div class="subvalue" id="sourceLabel">Kaynak seçiliyor</div></div>
     </section>
     <section class="tables">
       <div class="table-box"><div class="table-title positive">Long Sıralaması</div><div id="longTable" class="loading">Veriler yükleniyor...</div></div>
@@ -91,7 +108,7 @@ function renderTable(items,direction){
   const reasonsKey=direction==='long'?'reasonsLong':'reasonsShort';
   const warningsKey=direction==='long'?'warningsLong':'warningsShort';
   if(!items?.length)return '<div class="loading">Henüz veri yok.</div>';
-  return `<table><thead><tr><th>Durum</th><th>Coin</th><th>24s%</th><th>Stoch5</th><th>Stoch15</th><th>RSI5</th><th>EMA35-5</th><th>EMA35-15</th><th>EMA200-15</th><th>BB5</th><th>Hacim</th><th>Funding</th><th>OI</th><th>Skor</th><th>Neden / Uyarı</th></tr></thead><tbody>${
+  return `<table><thead><tr><th>Durum</th><th>Coin</th><th>24s%</th><th>Stoch5</th><th>Stoch15</th><th>RSI5</th><th>EMA50-5</th><th>EMA50-15</th><th>EMA200-15</th><th>BB5</th><th>Hacim</th><th>Funding</th><th>OI</th><th>Skor</th><th>Neden / Uyarı</th></tr></thead><tbody>${
     items.map(item=>`<tr>
       <td>${item[readyKey]?'<span class="ready">HAZIR</span>':'<span class="wait">İZLE</span>'}</td>
       <td><b class="coin-link" onclick="openCoinDetail(\'${item.symbol}\')">${item.symbol}</b></td>
@@ -106,16 +123,442 @@ function renderTable(items,direction){
     </tr>`).join('')
   }</tbody></table>`;
 }
+
+const BINANCE_BASES=[
+  'https://fapi.binance.com',
+  'https://fapi1.binance.com',
+  'https://fapi2.binance.com',
+  'https://fapi3.binance.com'
+];
+let lastBinanceAnalysed=[];
+
+async function binanceFetch(path){
+  const failures=[];
+  for(const base of BINANCE_BASES){
+    try{
+      const response=await fetch(base+path,{cache:'no-store'});
+      if(!response.ok){failures.push(`${base}: HTTP ${response.status}`);continue}
+      const text=await response.text();
+      if(!text.trim()){failures.push(`${base}: boş yanıt`);continue}
+      return JSON.parse(text);
+    }catch(error){failures.push(`${base}: ${error.message}`)}
+  }
+  throw new Error('Binance bağlantıları başarısız: '+failures.join(' | '));
+}
+function bSma(values,period){const s=values.slice(-period);return s.reduce((a,b)=>a+b,0)/(s.length||1)}
+function bStd(values,period){const s=values.slice(-period);const m=s.reduce((a,b)=>a+b,0)/(s.length||1);return Math.sqrt(s.reduce((a,b)=>a+(b-m)**2,0)/(s.length||1))}
+function bEma(values,period){if(!values.length)return 0;const k=2/(period+1);let e=values[0];for(let i=1;i<values.length;i++)e=values[i]*k+e*(1-k);return e}
+function bRsiSeries(values,period=14){
+  if(values.length<=period)return[];
+  let gain=0,loss=0;const out=[];
+  for(let i=1;i<=period;i++){const c=values[i]-values[i-1];gain+=Math.max(c,0);loss+=Math.max(-c,0)}
+  gain/=period;loss/=period;out.push(loss===0?100:100-100/(1+gain/loss));
+  for(let i=period+1;i<values.length;i++){const c=values[i]-values[i-1];gain=(gain*(period-1)+Math.max(c,0))/period;loss=(loss*(period-1)+Math.max(-c,0))/period;out.push(loss===0?100:100-100/(1+gain/loss))}
+  return out
+}
+function bStoch(values){
+  const r=bRsiSeries(values,14);if(r.length<18)return{k:50,d:50,zone:'middle',cross:'none'};
+  const raw=[];for(let i=13;i<r.length;i++){const w=r.slice(i-13,i+1),mn=Math.min(...w),mx=Math.max(...w);raw.push(mx===mn?50:((r[i]-mn)/(mx-mn))*100)}
+  const ks=[];for(let i=2;i<raw.length;i++)ks.push((raw[i]+raw[i-1]+raw[i-2])/3);
+  const ds=[];for(let i=2;i<ks.length;i++)ds.push((ks[i]+ks[i-1]+ks[i-2])/3);
+  const k=ks.at(-1)||50,d=ds.at(-1)||50,pk=ks.at(-2)||k,pd=ds.at(-2)||d;
+  return{k,d,zone:k<=20?'oversold':k>=80?'overbought':'middle',cross:pk<=pd&&k>d?'bullish':pk>=pd&&k<d?'bearish':'none'}
+}
+function bBbState(values,period=20){
+  if(values.length<period+1)return'middle';
+  const cur=values.slice(-period),prev=values.slice(-(period+1),-1),cm=bSma(cur,period),pm=bSma(prev,period),cd=bStd(cur,period),pd=bStd(prev,period);
+  const lo=cm-2*cd,up=cm+2*cd,plo=pm-2*pd,pup=pm+2*pd,last=values.at(-1),p=values.at(-2),tol=Math.max((up-lo)*.06,last*.0005);
+  if(p<plo&&last>=lo)return'lower_reentry';if(p>pup&&last<=up)return'upper_reentry';if(last<=lo+tol)return'lower_touch';if(last>=up-tol)return'upper_touch';return'middle'
+}
+function bAtrPct(c,period=14){const tr=[];for(let i=1;i<c.length;i++)tr.push(Math.max(c[i].high-c[i].low,Math.abs(c[i].high-c[i-1].close),Math.abs(c[i].low-c[i-1].close)));const a=bSma(tr,period),last=c.at(-1)?.close||0;return last?(a/last)*100:0}
+function bVolRatio(c,period=20){if(c.length<period+1)return 1;const cur=c.at(-1)?.turnover||0,prev=c.slice(-(period+1),-1).map(x=>x.turnover),avg=prev.reduce((a,b)=>a+b,0)/(prev.length||1);return avg?cur/avg:1}
+function bParseKlines(rows){return rows.map(r=>({ts:+r[0],open:+r[1],high:+r[2],low:+r[3],close:+r[4],volume:+r[5],turnover:+r[7]})).sort((a,b)=>a.ts-b.ts)}
+function bScore(c5,c15,change,funding,oi){
+  const cl5=c5.map(x=>x.close),cl15=c15.map(x=>x.close),last5=cl5.at(-1),last15=cl15.at(-1),rsi5=bRsiSeries(cl5).at(-1)||50,rsi15=bRsiSeries(cl15).at(-1)||50;
+  const stoch5=bStoch(cl5),stoch15=bStoch(cl15),e50_5=bEma(cl5,50),e50_15=bEma(cl15,50),e200_15=bEma(cl15,200),bb5=bBbState(cl5),bb15=bBbState(cl15),atr=bAtrPct(c5),vr=bVolRatio(c5);
+  const lg=last5>e50_5&&last15>e50_15&&last15>e200_15,sg=last5<e50_5&&last15<e50_15&&last15<e200_15;
+  let l=lg?30:0,s=sg?30:0;const rl=[],rs=[],wl=[],ws=[];
+  if(lg)rl.push('EMA50/200 trend onayı');else wl.push('Trend onayı yok');
+  if(sg)rs.push('EMA50/200 trend onayı');else ws.push('Trend onayı yok');
+  if(stoch5.zone==='oversold'){l+=12;rl.push('5m Stoch dip')}if(stoch5.cross==='bullish'){l+=12;rl.push('5m Stoch yukarı kesişim')}if(stoch15.zone==='oversold'){l+=10;rl.push('15m Stoch dip teyidi')}
+  if(stoch5.zone==='overbought'){s+=12;rs.push('5m Stoch tepe')}if(stoch5.cross==='bearish'){s+=12;rs.push('5m Stoch aşağı kesişim')}if(stoch15.zone==='overbought'){s+=10;rs.push('15m Stoch tepe teyidi')}
+  if(bb5==='lower_reentry'){l+=16;rl.push('BB altından içeri dönüş')}else if(bb5==='lower_touch'){l+=8}
+  if(bb5==='upper_reentry'){s+=16;rs.push('BB üstünden içeri dönüş')}else if(bb5==='upper_touch'){s+=8}
+  if(rsi5>70){l-=18;wl.push('RSI5 aşırı alım')}else if(rsi5>=42&&rsi5<=65)l+=8;
+  if(rsi5<30){s-=18;ws.push('RSI5 aşırı satım')}else if(rsi5>=35&&rsi5<=62)s+=8;
+  if(vr>=1.4){l+=8;s+=8}else if(vr<.35){l-=6;s-=6}
+  if(Math.abs(funding)<=.0002){l+=5;s+=5}else if(funding<-.0002)l+=6;else s+=6;
+  if(oi>=1e7){l+=3;s+=3}
+  if(change>15){l-=Math.min(20,(change-15)*1.2);wl.push('24s hareket uzamış')}if(change<-15){s-=Math.min(20,(Math.abs(change)-15)*1.2);ws.push('24s düşüş uzamış')}
+  if(atr>4){l-=8;s-=8}
+  if(!lg)l=Math.min(l,49);if(!sg)s=Math.min(s,49);if(rsi5>75)l=Math.min(l,35);if(rsi5<25)s=Math.min(s,35);
+  return{rsi5,rsi15,stoch5,stoch15,emaSide5:last5>=e50_5?'above':'below',emaSide15:last15>=e50_15?'above':'below',ema200Side15:last15>=e200_15?'above':'below',bb5,bb15,atrPct5:atr,volumeRatio5:vr,longScore:Math.max(0,Math.min(100,Math.round(l))),shortScore:Math.max(0,Math.min(100,Math.round(s))),longReady:lg&&l>=70,shortReady:sg&&s>=70,reasonsLong:rl,warningsLong:wl,reasonsShort:rs,warningsShort:ws}
+}
+async function loadBinanceDashboard(){
+  const tickers=await binanceFetch('/fapi/v1/ticker/24hr');
+  const liquid=tickers.filter(x=>x.symbol.endsWith('USDT')&&!x.symbol.startsWith('1000')).map(x=>({symbol:x.symbol,price:+x.lastPrice,change:+x.priceChangePercent,turnover:+x.quoteVolume,funding:0,oi:0})).filter(x=>x.price>0&&x.turnover>=1e7);
+  const gainers=[...liquid].filter(x=>x.change>0).sort((a,b)=>b.change-a.change).slice(0,10);
+  const losers=[...liquid].filter(x=>x.change<0).sort((a,b)=>a.change-b.change).slice(0,10);
+  const candidates=[...new Map([...gainers,...losers].map(x=>[x.symbol,x])).values()];
+  const analysed=[];
+  for(let i=0;i<candidates.length;i+=4){
+    const batch=candidates.slice(i,i+4);
+    analysed.push(...await Promise.all(batch.map(async item=>{
+      const [k5,k15,premium,oi]=await Promise.all([
+        binanceFetch(`/fapi/v1/klines?symbol=${item.symbol}&interval=5m&limit=240`),
+        binanceFetch(`/fapi/v1/klines?symbol=${item.symbol}&interval=15m&limit=240`),
+        binanceFetch(`/fapi/v1/premiumIndex?symbol=${item.symbol}`).catch(()=>({lastFundingRate:'0'})),
+        binanceFetch(`/fapi/v1/openInterest?symbol=${item.symbol}`).catch(()=>({openInterest:'0'}))
+      ]);
+      item.funding=+(premium.lastFundingRate||0);item.oi=+(oi.openInterest||0)*item.price;
+      const c5=bParseKlines(k5),c15=bParseKlines(k15),a=bScore(c5,c15,item.change,item.funding,item.oi);
+      return{...item,price:item.price.toLocaleString('en-US',{maximumFractionDigits:8}),fundingRate:item.funding*100,openInterestValue:item.oi,...a,candles5:c5,candles15:c15}
+    })));
+  }
+  lastBinanceAnalysed=analysed;
+  return{ok:true,exchange:'Binance Futures',sourceType:'browser-direct',apiSource:'fapi.binance.com',scannedMarketCount:liquid.length,analysedCoinCount:analysed.length,updatedAtDisplay:new Date().toLocaleTimeString('tr-TR'),long:[...analysed].sort((a,b)=>b.longScore-a.longScore).slice(0,10),short:[...analysed].sort((a,b)=>b.shortScore-a.shortScore).slice(0,10)}
+}
+
+
+const MEXC_BASES=[];
+const OKX_BASES=['https://www.okx.com','https://app.okx.com','https://my.okx.com'];
+let lastMexcAnalysed=[];
+let lastOkxAnalysed=[];
+
+async function publicFetchJson(bases,path){
+  const failures=[];
+  for(const base of bases){
+    try{
+      const response=await fetch(base+path,{cache:'no-store',headers:{accept:'application/json'}});
+      if(!response.ok){failures.push(`${base}: HTTP ${response.status}`);continue}
+      const text=await response.text();
+      if(!text.trim()){failures.push(`${base}: boş yanıt`);continue}
+      return JSON.parse(text);
+    }catch(error){failures.push(`${base}: ${error.message}`)}
+  }
+  throw new Error(failures.join(' | '));
+}
+
+function buildGenericAnalysed(item,c5,c15){
+  const a=bScore(c5,c15,item.change,item.funding,item.oi);
+  return {
+    ...item,
+    price:item.price.toLocaleString('en-US',{maximumFractionDigits:8}),
+    fundingRate:item.funding*100,
+    openInterestValue:item.oi,
+    ...a,
+    candles5:c5,
+    candles15:c15
+  };
+}
+
+function chooseCandidates(liquid){
+  const gainers=[...liquid].filter(x=>x.change>0).sort((a,b)=>b.change-a.change).slice(0,10);
+  const losers=[...liquid].filter(x=>x.change<0).sort((a,b)=>a.change-b.change).slice(0,10);
+  return [...new Map([...gainers,...losers].map(x=>[x.symbol,x])).values()];
+}
+
+async function mapBatches(values,size,mapper){
+  const out=[];
+  for(let i=0;i<values.length;i+=size){
+    out.push(...await Promise.all(values.slice(i,i+size).map(mapper)));
+  }
+  return out;
+}
+
+function dashboardFromAnalysed(exchange,apiSource,sourceType,liquid,analysed){
+  return {
+    ok:true,exchange,apiSource,sourceType,
+    scannedMarketCount:liquid.length,
+    analysedCoinCount:analysed.length,
+    updatedAtDisplay:new Date().toLocaleTimeString('tr-TR'),
+    long:[...analysed].sort((a,b)=>b.longScore-a.longScore).slice(0,10),
+    short:[...analysed].sort((a,b)=>b.shortScore-a.shortScore).slice(0,10)
+  };
+}
+
+// ---------- MEXC ----------
+
+async function mexcFetch(path){
+  const response=await fetch(`/api/mexc-proxy?path=${encodeURIComponent(path)}`,{
+    cache:'no-store'
+  });
+  const text=await response.text();
+  let body;
+  try{body=JSON.parse(text)}catch{throw new Error(`MEXC geçersiz yanıt: ${text.slice(0,120)}`)}
+  if(!response.ok){
+    throw new Error(body.error||body.message||`MEXC HTTP ${response.status}`);
+  }
+  if(body.success===false){
+    throw new Error(body.message||`MEXC kod ${body.code}`);
+  }
+  return body;
+}
+
+function mexcKlines(data){
+  if(!data?.time)return[];
+  const out=[];
+  for(let i=0;i<data.time.length;i++){
+    out.push({
+      ts:+data.time[i]*1000,
+      open:+data.open[i],high:+data.high[i],low:+data.low[i],close:+data.close[i],
+      volume:+(data.vol?.[i]||0),turnover:+(data.amount?.[i]||0)
+    });
+  }
+  return out.sort((a,b)=>a.ts-b.ts);
+}
+
+async function loadMexcDashboard(){
+  const payload=await mexcFetch('/api/v1/contract/ticker');
+  const rows=Array.isArray(payload.data)?payload.data:[payload.data].filter(Boolean);
+  const liquid=rows
+    .filter(x=>String(x.symbol||'').endsWith('_USDT'))
+    .map(x=>({
+      symbol:String(x.symbol).replace('_',''),
+      nativeSymbol:String(x.symbol),
+      price:+x.lastPrice,
+      change:+x.riseFallRate*100,
+      turnover:+x.amount24,
+      funding:+(x.fundingRate||0),
+      oi:+(x.holdVol||0)*(+x.lastPrice)
+    }))
+    .filter(x=>x.price>0&&x.turnover>=1e7);
+
+  const candidates=chooseCandidates(liquid);
+  const now=Math.floor(Date.now()/1000);
+  const start5=now-240*5*60;
+  const start15=now-240*15*60;
+
+  const analysed=await mapBatches(candidates,4,async item=>{
+    const [p5,p15,funding]=await Promise.all([
+      mexcFetch(`/api/v1/contract/kline/${item.nativeSymbol}?interval=Min5&start=${start5}&end=${now}`),
+      mexcFetch(`/api/v1/contract/kline/${item.nativeSymbol}?interval=Min15&start=${start15}&end=${now}`),
+      mexcFetch(`/api/v1/contract/funding_rate/${item.nativeSymbol}`).catch(()=>({data:{fundingRate:item.funding}}))
+    ]);
+    item.funding=+(funding?.data?.fundingRate??item.funding??0);
+    return buildGenericAnalysed(item,mexcKlines(p5.data),mexcKlines(p15.data));
+  });
+
+  lastMexcAnalysed=analysed;
+  return dashboardFromAnalysed('MEXC Futures','contract.mexc.com','browser-direct',liquid,analysed);
+}
+
+// ---------- OKX ----------
+function okxKlines(rows){
+  return (rows||[]).map(r=>({
+    ts:+r[0],open:+r[1],high:+r[2],low:+r[3],close:+r[4],
+    volume:+r[5],turnover:+(r[7]||r[6]||0)
+  })).sort((a,b)=>a.ts-b.ts);
+}
+
+async function loadOkxDashboard(){
+  const [tickersPayload,oiPayload]=await Promise.all([
+    publicFetchJson(OKX_BASES,'/api/v5/market/tickers?instType=SWAP'),
+    publicFetchJson(OKX_BASES,'/api/v5/public/open-interest?instType=SWAP').catch(()=>({data:[]}))
+  ]);
+  if(tickersPayload.code!=='0')throw new Error(tickersPayload.msg||'OKX ticker hatası');
+  const oiMap=new Map((oiPayload.data||[]).map(x=>[x.instId,+(x.oiUsd||x.oiCcy||0)]));
+  const liquid=(tickersPayload.data||[])
+    .filter(x=>String(x.instId).endsWith('-USDT-SWAP'))
+    .map(x=>{
+      const price=+x.last,open=+x.open24h;
+      return{
+        symbol:String(x.instId).replace('-SWAP','').replace('-',''),
+        nativeSymbol:String(x.instId),
+        price,
+        change:open?((price-open)/open)*100:0,
+        turnover:(+x.volCcy24h||+x.vol24h||0)*price,
+        funding:0,
+        oi:oiMap.get(x.instId)||0
+      };
+    })
+    .filter(x=>x.price>0&&x.turnover>=1e7);
+
+  const candidates=chooseCandidates(liquid);
+  const analysed=await mapBatches(candidates,4,async item=>{
+    const [p5,p15,funding]=await Promise.all([
+      publicFetchJson(OKX_BASES,`/api/v5/market/candles?instId=${item.nativeSymbol}&bar=5m&limit=240`),
+      publicFetchJson(OKX_BASES,`/api/v5/market/candles?instId=${item.nativeSymbol}&bar=15m&limit=240`),
+      publicFetchJson(OKX_BASES,`/api/v5/public/funding-rate?instId=${item.nativeSymbol}`).catch(()=>({data:[]}))
+    ]);
+    if(p5.code!=='0'||p15.code!=='0')throw new Error(`OKX kline hatası: ${item.nativeSymbol}`);
+    item.funding=+(funding.data?.[0]?.fundingRate||0);
+    return buildGenericAnalysed(item,okxKlines(p5.data),okxKlines(p15.data));
+  });
+
+  lastOkxAnalysed=analysed;
+  return dashboardFromAnalysed('OKX Perpetual','okx.com','browser-direct',liquid,analysed);
+}
+
+function analysedForExchange(exchange){
+  if(exchange==='binance')return lastBinanceAnalysed;
+  if(exchange==='mexc')return lastMexcAnalysed;
+  if(exchange==='okx')return lastOkxAnalysed;
+  return [];
+}
+
+function exchangeDisplay(exchange){
+  return exchange==='binance'?'Binance Futures':exchange==='mexc'?'MEXC Futures':exchange==='okx'?'OKX Perpetual':'Bybit Futures';
+}
+
+function buildUniversalDetail(item){
+  const candles=item.candles5.slice(-100);
+  const closes=candles.map(c=>c.close);
+  const entry=Number(String(item.price).replaceAll(',',''));
+  const side=item.longScore>=item.shortScore?'long':'short';
+  const score=Math.max(item.longScore,item.shortScore);
+  const ready=side==='long'?item.longReady:item.shortReady;
+  const atrDistance=Math.max(entry*(item.atrPct5/100),entry*.004);
+  const stopDistance=atrDistance*(score>=85?.9:score>=70?1:1.15);
+  const plan=side==='long'
+    ? {entry,sl:entry-stopDistance,tp1:entry+stopDistance*1.2,tp2:entry+stopDistance*2,tp3:entry+stopDistance*3,riskReward:2}
+    : {entry,sl:entry+stopDistance,tp1:entry-stopDistance*1.2,tp2:entry-stopDistance*2,tp3:entry-stopDistance*3,riskReward:2};
+
+  return {
+    ...item,side,score,ready,
+    stars:score>=90?5:score>=80?4:score>=68?3:score>=55?2:1,
+    risk:score>=82&&item.atrPct5<=1.5?'Düşük':score>=65&&item.atrPct5<=3?'Orta':'Yüksek',
+    plan,
+    reasons:side==='long'?item.reasonsLong:item.reasonsShort,
+    warnings:side==='long'?item.warningsLong:item.warningsShort,
+    analysis:item,
+    candles5:candles,
+    indicators5:{
+      ema50:bEmaSeries(closes,35),
+      ema200:bEmaSeries(closes,200),
+      bollinger:bBollingerSeries(closes,20),
+      rsi:(()=>{const r=bRsiSeries(closes,14),o=new Array(closes.length).fill(null),start=closes.length-r.length;r.forEach((v,i)=>o[start+i]=v);return o})(),
+      stochRsi:bStochSeries(closes)
+    }
+  };
+}
+
+async function openBrowserExchangeDetail(symbol,exchange){
+  const modal=document.getElementById('coinModal');
+  const content=document.getElementById('modalContent');
+  const exchangeName=exchangeDisplay(exchange);
+  document.getElementById('modalTitle').textContent=`${symbol} ${exchangeName} Detay Analizi`;
+  content.innerHTML='<div class="loading">Grafik ve AI verileri hazırlanıyor...</div>';
+  modal.classList.add('open');
+
+  try{
+    const item=analysedForExchange(exchange).find(x=>x.symbol===symbol);
+    if(!item)throw new Error('Coin analizi bulunamadı. Önce taramayı yenileyin.');
+    const data=buildUniversalDetail(item);
+    const sideClass=data.side==='long'?'positive':'negative';
+    const p=data.plan;
+
+    content.innerHTML=`
+      <div class="detail-grid">
+        <div>
+          <div class="detail-card">
+            <div class="detail-kpis">
+              <div class="detail-kpi"><div class="label">Yön</div><div class="v ${sideClass}">${data.side.toUpperCase()}</div></div>
+              <div class="detail-kpi"><div class="label">Sihirbaz Skoru</div><div class="v ${sideClass}">${data.score}/100</div></div>
+              <div class="detail-kpi"><div class="label">Durum</div><div class="v">${data.ready?'HAZIR':'İZLE'}</div></div>
+              <div class="detail-kpi"><div class="label">Risk</div><div class="v">${data.risk}</div></div>
+            </div>
+            <div class="stars">${'★'.repeat(data.stars)}${'☆'.repeat(5-data.stars)}</div>
+          </div>
+          <div class="detail-card" style="margin-top:14px">
+            <div class="chart-tabs"><button class="chart-tab active">5 Dakika</button></div>
+            <div class="chart-legend">
+              <span><i class="legend-dot" style="background:#f1c75b"></i>EMA50</span>
+              <span><i class="legend-dot" style="background:#a68cff"></i>EMA200</span>
+              <span><i class="legend-dot" style="background:#53769a"></i>Bollinger</span>
+              <span><i class="legend-dot" style="background:#56c9ff"></i>Stoch K</span>
+              <span><i class="legend-dot" style="background:#ffb85c"></i>Stoch D</span>
+            </div>
+            <div class="chart-wrap" style="height:520px"><canvas id="priceChart"></canvas></div>
+          </div>
+          <div class="detail-card" style="margin-top:14px">
+            <b>Analiz Nedenleri</b>
+            <ul class="analysis-list">${data.reasons.map(x=>`<li>${x}</li>`).join('')}</ul>
+            ${data.warnings.length?`<b class="warning">Uyarılar</b><ul class="analysis-list warning">${data.warnings.map(x=>`<li>${x}</li>`).join('')}</ul>`:''}
+          </div>
+        </div>
+        <div>
+          <div class="detail-card">
+            <b>İşlem Planı</b>
+            <div class="plan-grid" style="margin-top:12px">
+              <div class="plan-box"><div class="label">Giriş</div><b>${formatPrice(p.entry)}</b></div>
+              <div class="plan-box"><div class="label">Stop</div><b class="negative">${formatPrice(p.sl)}</b></div>
+              <div class="plan-box"><div class="label">TP1</div><b class="positive">${formatPrice(p.tp1)}</b></div>
+              <div class="plan-box"><div class="label">TP2</div><b class="positive">${formatPrice(p.tp2)}</b></div>
+              <div class="plan-box"><div class="label">TP3</div><b class="positive">${formatPrice(p.tp3)}</b></div>
+              <div class="plan-box"><div class="label">R/R</div><b>${p.riskReward.toFixed(1)}</b></div>
+            </div>
+          </div>
+          <div class="detail-card" style="margin-top:14px">
+            <b>Bağımsız Yapay Zekâ İkinci Görüşü</b>
+            <div id="aiComment" class="ai-box ai-loading" style="margin-top:10px">Ham mumlar analiz ediliyor...</div>
+          </div>
+          <div class="detail-card" style="margin-top:14px">
+            <b>Teknik Özeti</b>
+            <ul class="analysis-list">
+              <li>RSI5: ${data.rsi5.toFixed(1)}</li>
+              <li>RSI15: ${data.rsi15.toFixed(1)}</li>
+              <li>Stoch5 K/D: ${data.stoch5.k.toFixed(0)}/${data.stoch5.d.toFixed(0)}</li>
+              <li>Stoch15 K/D: ${data.stoch15.k.toFixed(0)}/${data.stoch15.d.toFixed(0)}</li>
+              <li>Hacim: ${data.volumeRatio5.toFixed(2)}x</li>
+              <li>ATR: %${data.atrPct5.toFixed(2)}</li>
+              <li>Funding: %${data.fundingRate.toFixed(4)}</li>
+              <li>OI: ${compactMoney(data.openInterestValue)}</li>
+            </ul>
+          </div>
+        </div>
+      </div>`;
+
+    requestAnimationFrame(()=>drawTechnicalChart(data));
+
+    const marketPacket={
+      symbol,exchange:exchangeName,currentPrice:p.entry,
+      change24hPct:data.change,fundingPct:data.fundingRate,openInterestUsd:data.openInterestValue,
+      technical:{
+        rsi5:data.rsi5,rsi15:data.rsi15,stoch5:data.stoch5,stoch15:data.stoch15,
+        emaSide5:data.emaSide5,emaSide15:data.emaSide15,ema200Side15:data.ema200Side15,
+        bb5:data.bb5,bb15:data.bb15,volumeRatio5:data.volumeRatio5,atrPct5:data.atrPct5
+      },
+      candles5:data.candles5.slice(-40).map(c=>[c.ts,c.open,c.high,c.low,c.close,c.turnover])
+    };
+
+    const response=await fetch('/api/ai-packet',{
+      method:'POST',
+      headers:{'content-type':'application/json'},
+      body:JSON.stringify({
+        symbol,exchange:exchangeName,
+        ruleEngine:{side:data.side,score:data.score,ready:data.ready},
+        marketPacket
+      })
+    });
+    const ai=await response.json();
+    const box=document.getElementById('aiComment');
+    if(box){
+      box.classList.remove('ai-loading');
+      box.textContent=response.ok&&ai.ok?ai.comment:(ai.error||'Yapay zekâ yorumu alınamadı');
+    }
+  }catch(error){
+    content.innerHTML=`<div class="error">${error.message}</div>`;
+  }
+}
+
 async function loadDashboard(){
   longTable.innerHTML='<div class="loading">Strateji hesaplanıyor...</div>';
   shortTable.innerHTML='<div class="loading">Strateji hesaplanıyor...</div>';
   try{
-    const response=await fetch(`/api/dashboard?t=${Date.now()}`,{cache:'no-store'});
-    const data=await response.json();
-    if(!response.ok||!data.ok)throw new Error(data.error||'Veri alınamadı');
+    let data;
+    const selected=document.getElementById('exchangeSelect').value;
+    if(selected==='binance')data=await loadBinanceDashboard();
+    else if(selected==='mexc')data=await loadMexcDashboard();
+    else if(selected==='okx')data=await loadOkxDashboard();
+    else{
+      const response=await fetch(`/api/dashboard?t=${Date.now()}`,{cache:'no-store'});
+      data=await response.json();
+      if(!response.ok||!data.ok)throw new Error(data.error||'Veri alınamadı');
+    }
     marketCount.textContent=data.scannedMarketCount;analysedCount.textContent=data.analysedCoinCount;
     const readyLong=data.long.filter(x=>x.longReady).length;const readyShort=data.short.filter(x=>x.shortReady).length;
-    readyCount.textContent=`${readyLong} / ${readyShort}`;updatedAt.textContent=data.updatedAtDisplay;
+    readyCount.textContent=`${readyLong} / ${readyShort}`;updatedAt.textContent=data.updatedAtDisplay;sourceLabel.textContent=`Kaynak: ${data.apiSource} • ${data.sourceType}`;
     systemStatus.textContent='● Sistem aktif';
     longTable.innerHTML=renderTable(data.long,'long');shortTable.innerHTML=renderTable(data.short,'short');
   }catch(error){
@@ -160,7 +603,7 @@ function drawTechnicalChart(data){
   const plan=[data.plan.sl,data.plan.tp1,data.plan.tp2,data.plan.tp3,data.plan.entry];
   const seriesValues=[
     ...candles.flatMap(c=>[c.low,c.high]),
-    ...(ind.ema35||[]).filter(Number.isFinite),
+    ...(ind.ema50||[]).filter(Number.isFinite),
     ...(ind.ema200||[]).filter(Number.isFinite),
     ...(ind.bollinger.upper||[]).filter(Number.isFinite),
     ...(ind.bollinger.lower||[]).filter(Number.isFinite),
@@ -195,7 +638,7 @@ function drawTechnicalChart(data){
   drawLine(ind.bollinger.upper,'#53769a',1,[4,3]);
   drawLine(ind.bollinger.middle,'#7890aa',1,[3,3]);
   drawLine(ind.bollinger.lower,'#53769a',1,[4,3]);
-  drawLine(ind.ema35,'#f1c75b',1.8);
+  drawLine(ind.ema50,'#f1c75b',1.8);
   drawLine(ind.ema200,'#a68cff',1.8);
 
   candles.forEach((c,i)=>{
@@ -254,12 +697,221 @@ function drawTechnicalChart(data){
   ctx.fillStyle='#7890aa';ctx.fillText('Stoch',5,stochTop+13);
 }
 
+
+function bEmaSeries(values,period){
+  const out=new Array(values.length).fill(null);
+  if(!values.length)return out;
+  const k=2/(period+1);
+  let current=values[0];
+  for(let i=0;i<values.length;i++){
+    if(i===0)current=values[0];
+    else current=values[i]*k+current*(1-k);
+    if(i>=period-1)out[i]=current;
+  }
+  return out;
+}
+
+function bBollingerSeries(values,period=20){
+  const upper=new Array(values.length).fill(null);
+  const middle=new Array(values.length).fill(null);
+  const lower=new Array(values.length).fill(null);
+  for(let i=period-1;i<values.length;i++){
+    const w=values.slice(i-period+1,i+1);
+    const mean=w.reduce((a,b)=>a+b,0)/period;
+    const variance=w.reduce((a,b)=>a+(b-mean)**2,0)/period;
+    const dev=Math.sqrt(variance);
+    middle[i]=mean; upper[i]=mean+2*dev; lower[i]=mean-2*dev;
+  }
+  return {upper,middle,lower};
+}
+
+function bStochSeries(values){
+  const r=bRsiSeries(values,14);
+  const offset=values.length-r.length;
+  const raw=[];
+  for(let i=13;i<r.length;i++){
+    const w=r.slice(i-13,i+1),mn=Math.min(...w),mx=Math.max(...w);
+    raw.push(mx===mn?50:((r[i]-mn)/(mx-mn))*100);
+  }
+  const ks=[];
+  for(let i=2;i<raw.length;i++)ks.push((raw[i]+raw[i-1]+raw[i-2])/3);
+  const ds=[];
+  for(let i=2;i<ks.length;i++)ds.push((ks[i]+ks[i-1]+ks[i-2])/3);
+  const k=new Array(values.length).fill(null),d=new Array(values.length).fill(null);
+  const ks0=offset+15,ds0=ks0+2;
+  ks.forEach((v,i)=>{if(ks0+i<k.length)k[ks0+i]=v});
+  ds.forEach((v,i)=>{if(ds0+i<d.length)d[ds0+i]=v});
+  return {k,d};
+}
+
+function buildBinanceDetailData(item){
+  const candles=item.candles5.slice(-100);
+  const closes=candles.map(c=>c.close);
+  const entry=Number(String(item.price).replaceAll(',',''));
+  const side=item.longScore>=item.shortScore?'long':'short';
+  const score=Math.max(item.longScore,item.shortScore);
+  const ready=side==='long'?item.longReady:item.shortReady;
+  const atrDistance=Math.max(entry*(item.atrPct5/100),entry*.004);
+  const stopDistance=atrDistance*(score>=85?.9:score>=70?1:1.15);
+  const plan=side==='long'
+    ? {entry,sl:entry-stopDistance,tp1:entry+stopDistance*1.2,tp2:entry+stopDistance*2,tp3:entry+stopDistance*3,riskReward:2}
+    : {entry,sl:entry+stopDistance,tp1:entry-stopDistance*1.2,tp2:entry-stopDistance*2,tp3:entry-stopDistance*3,riskReward:2};
+
+  return {
+    ...item,
+    side,
+    score,
+    ready,
+    stars:score>=90?5:score>=80?4:score>=68?3:score>=55?2:1,
+    risk:score>=82&&item.atrPct5<=1.5?'Düşük':score>=65&&item.atrPct5<=3?'Orta':'Yüksek',
+    plan,
+    reasons:side==='long'?item.reasonsLong:item.reasonsShort,
+    warnings:side==='long'?item.warningsLong:item.warningsShort,
+    analysis:item,
+    candles5:candles,
+    indicators5:{
+      ema50:bEmaSeries(closes,35),
+      ema200:bEmaSeries(closes,200),
+      bollinger:bBollingerSeries(closes,20),
+      rsi:(()=>{const r=bRsiSeries(closes,14),o=new Array(closes.length).fill(null),start=closes.length-r.length;r.forEach((v,i)=>o[start+i]=v);return o})(),
+      stochRsi:bStochSeries(closes)
+    }
+  };
+}
+
+async function openBinanceCoinDetail(symbol){
+  const modal=document.getElementById('coinModal');
+  const content=document.getElementById('modalContent');
+  document.getElementById('modalTitle').textContent=symbol+' Binance Detay Analizi';
+  content.innerHTML='<div class="loading">Binance grafik ve AI verileri hazırlanıyor...</div>';
+  modal.classList.add('open');
+
+  try{
+    const item=lastBinanceAnalysed.find(x=>x.symbol===symbol);
+    if(!item)throw new Error('Binance coin analizi bulunamadı. Önce Binance taramasını yenileyin.');
+
+    const data=buildBinanceDetailData(item);
+    const sideText=data.side==='long'?'LONG':'SHORT';
+    const sideClass=data.side==='long'?'positive':'negative';
+    const p=data.plan;
+
+    content.innerHTML=`
+      <div class="detail-grid">
+        <div>
+          <div class="detail-card">
+            <div class="detail-kpis">
+              <div class="detail-kpi"><div class="label">Yön</div><div class="v ${sideClass}">${sideText}</div></div>
+              <div class="detail-kpi"><div class="label">Sihirbaz Skoru</div><div class="v ${sideClass}">${data.score}/100</div></div>
+              <div class="detail-kpi"><div class="label">Durum</div><div class="v">${data.ready?'HAZIR':'İZLE'}</div></div>
+              <div class="detail-kpi"><div class="label">Risk</div><div class="v">${data.risk}</div></div>
+            </div>
+            <div class="stars">${'★'.repeat(data.stars)}${'☆'.repeat(5-data.stars)}</div>
+          </div>
+
+          <div class="detail-card" style="margin-top:14px">
+            <div class="chart-tabs"><button class="chart-tab active">5 Dakika</button></div>
+            <div class="chart-legend">
+              <span><i class="legend-dot" style="background:#f1c75b"></i>EMA50</span>
+              <span><i class="legend-dot" style="background:#a68cff"></i>EMA200</span>
+              <span><i class="legend-dot" style="background:#53769a"></i>Bollinger</span>
+              <span><i class="legend-dot" style="background:#56c9ff"></i>Stoch K</span>
+              <span><i class="legend-dot" style="background:#ffb85c"></i>Stoch D</span>
+            </div>
+            <div class="chart-wrap" style="height:520px"><canvas id="priceChart"></canvas></div>
+          </div>
+
+          <div class="detail-card" style="margin-top:14px">
+            <b>Analiz Nedenleri</b>
+            <ul class="analysis-list">${data.reasons.map(x=>`<li>${x}</li>`).join('')}</ul>
+            ${data.warnings.length?`<b class="warning">Uyarılar</b><ul class="analysis-list warning">${data.warnings.map(x=>`<li>${x}</li>`).join('')}</ul>`:''}
+          </div>
+        </div>
+
+        <div>
+          <div class="detail-card">
+            <b>İşlem Planı</b>
+            <div class="plan-grid" style="margin-top:12px">
+              <div class="plan-box"><div class="label">Giriş</div><b>${formatPrice(p.entry)}</b></div>
+              <div class="plan-box"><div class="label">Stop</div><b class="negative">${formatPrice(p.sl)}</b></div>
+              <div class="plan-box"><div class="label">TP1</div><b class="positive">${formatPrice(p.tp1)}</b></div>
+              <div class="plan-box"><div class="label">TP2</div><b class="positive">${formatPrice(p.tp2)}</b></div>
+              <div class="plan-box"><div class="label">TP3</div><b class="positive">${formatPrice(p.tp3)}</b></div>
+              <div class="plan-box"><div class="label">R/R</div><b>${p.riskReward.toFixed(1)}</b></div>
+            </div>
+          </div>
+
+          <div class="detail-card" style="margin-top:14px">
+            <b>Bağımsız Yapay Zekâ İkinci Görüşü</b>
+            <div id="aiComment" class="ai-box ai-loading" style="margin-top:10px">Binance mumları analiz ediliyor...</div>
+          </div>
+
+          <div class="detail-card" style="margin-top:14px">
+            <b>Teknik Özeti</b>
+            <ul class="analysis-list">
+              <li>RSI5: ${data.rsi5.toFixed(1)}</li>
+              <li>RSI15: ${data.rsi15.toFixed(1)}</li>
+              <li>Stoch5 K/D: ${data.stoch5.k.toFixed(0)}/${data.stoch5.d.toFixed(0)}</li>
+              <li>Stoch15 K/D: ${data.stoch15.k.toFixed(0)}/${data.stoch15.d.toFixed(0)}</li>
+              <li>Hacim: ${data.volumeRatio5.toFixed(2)}x</li>
+              <li>ATR: %${data.atrPct5.toFixed(2)}</li>
+              <li>Funding: %${data.fundingRate.toFixed(4)}</li>
+              <li>OI: ${compactMoney(data.openInterestValue)}</li>
+            </ul>
+          </div>
+        </div>
+      </div>`;
+
+    requestAnimationFrame(()=>drawTechnicalChart(data));
+
+    const marketPacket={
+      symbol,
+      exchange:'Binance Futures',
+      currentPrice:p.entry,
+      change24hPct:data.change,
+      fundingPct:data.fundingRate,
+      openInterestUsd:data.openInterestValue,
+      technical:{
+        rsi5:data.rsi5,rsi15:data.rsi15,
+        stoch5:data.stoch5,stoch15:data.stoch15,
+        emaSide5:data.emaSide5,emaSide15:data.emaSide15,ema200Side15:data.ema200Side15,
+        bb5:data.bb5,bb15:data.bb15,
+        volumeRatio5:data.volumeRatio5,atrPct5:data.atrPct5
+      },
+      candles5:data.candles5.slice(-40).map(c=>[c.ts,c.open,c.high,c.low,c.close,c.turnover])
+    };
+
+    const response=await fetch('/api/ai-packet',{
+      method:'POST',
+      headers:{'content-type':'application/json'},
+      body:JSON.stringify({
+        symbol,
+        exchange:'Binance Futures',
+        ruleEngine:{side:data.side,score:data.score,ready:data.ready},
+        marketPacket
+      })
+    });
+    const ai=await response.json();
+    const box=document.getElementById('aiComment');
+    if(box){
+      box.classList.remove('ai-loading');
+      box.textContent=response.ok&&ai.ok?ai.comment:(ai.error||'Yapay zekâ yorumu alınamadı');
+    }
+  }catch(error){
+    content.innerHTML=`<div class="error">${error.message}</div>`;
+  }
+}
+
+
 function closeCoinModal(event){
   if(event&&event.target!==event.currentTarget)return;
   document.getElementById('coinModal').classList.remove('open');
 }
 
 async function openCoinDetail(symbol){
+  const selected=document.getElementById('exchangeSelect').value;
+  if(selected==='binance'||selected==='mexc'||selected==='okx'){
+    return openBrowserExchangeDetail(symbol,selected);
+  }
   const modal=document.getElementById('coinModal');
   const content=document.getElementById('modalContent');
   document.getElementById('modalTitle').textContent=symbol+' Detay Analizi';
@@ -289,7 +941,7 @@ async function openCoinDetail(symbol){
           <div class="detail-card" style="margin-top:14px">
             <div class="chart-tabs"><button class="chart-tab active">5 Dakika</button></div>
             <div class="chart-legend">
-              <span><i class="legend-dot" style="background:#f1c75b"></i>EMA35</span>
+              <span><i class="legend-dot" style="background:#f1c75b"></i>EMA50</span>
               <span><i class="legend-dot" style="background:#a68cff"></i>EMA200</span>
               <span><i class="legend-dot" style="background:#53769a"></i>Bollinger</span>
               <span><i class="legend-dot" style="background:#56c9ff"></i>Stoch K</span>
@@ -370,6 +1022,247 @@ async function openCoinDetail(symbol){
   }
 }
 
+
+
+let activeInteractiveChart=null;
+
+function swingLevels(candles,lookback=80,pivot=2){
+  const slice=candles.slice(-lookback);
+  const highs=[],lows=[];
+  for(let i=pivot;i<slice.length-pivot;i++){
+    const c=slice[i];
+    let isHigh=true,isLow=true;
+    for(let j=i-pivot;j<=i+pivot;j++){
+      if(j===i)continue;
+      if(slice[j].high>=c.high)isHigh=false;
+      if(slice[j].low<=c.low)isLow=false;
+    }
+    if(isHigh)highs.push(c.high);
+    if(isLow)lows.push(c.low);
+  }
+  const last=slice.at(-1)?.close||0;
+  const resistance=[...highs].filter(v=>v>last).sort((a,b)=>a-b)[0]||Math.max(...slice.map(c=>c.high));
+  const support=[...lows].filter(v=>v<last).sort((a,b)=>b-a)[0]||Math.min(...slice.map(c=>c.low));
+  return{support,resistance};
+}
+
+function breakoutState(candles,levels){
+  if(candles.length<2)return'none';
+  const last=candles.at(-1),prev=candles.at(-2);
+  if(prev.close<=levels.resistance&&last.close>levels.resistance)return'up';
+  if(prev.close>=levels.support&&last.close<levels.support)return'down';
+  return'none';
+}
+
+function makeIndicatorSet(candles){
+  const closes=candles.map(c=>c.close);
+  const r=bRsiSeries(closes,14),rsi=new Array(closes.length).fill(null);
+  const start=closes.length-r.length;r.forEach((v,i)=>rsi[start+i]=v);
+  return{
+    ema50:bEmaSeries(closes,50),
+    ema200:bEmaSeries(closes,200),
+    bollinger:bBollingerSeries(closes,20),
+    rsi,
+    stochRsi:bStochSeries(closes)
+  };
+}
+
+function normalizeBybitDetail(data){
+  if(!data.candles15)data.candles15=[];
+  if(!data.indicators5?.ema50&&data.indicators5?.ema35){
+    data.indicators5.ema50=data.indicators5.ema35;
+  }
+  if(!data.indicators15&&data.candles15?.length){
+    data.indicators15=makeIndicatorSet(data.candles15);
+  }
+  return data;
+}
+
+function createInteractiveChart(container,data,timeframe){
+  if(activeInteractiveChart){
+    try{activeInteractiveChart.remove()}catch{}
+    activeInteractiveChart=null;
+  }
+  container.innerHTML='';
+  const candles=timeframe==='15'?data.candles15:data.candles5;
+  const indicators=timeframe==='15'?(data.indicators15||makeIndicatorSet(candles)):(data.indicators5||makeIndicatorSet(candles));
+  const levels=swingLevels(candles,timeframe==='15'?100:120,2);
+  const breakout=breakoutState(candles,levels);
+
+  const chart=LightweightCharts.createChart(container,{
+    width:container.clientWidth,
+    height:560,
+    layout:{background:{type:'solid',color:'#07111f'},textColor:'#9db0c8'},
+    grid:{vertLines:{color:'#12243a'},horzLines:{color:'#12243a'}},
+    rightPriceScale:{borderColor:'#263852'},
+    timeScale:{borderColor:'#263852',timeVisible:true,secondsVisible:false,rightOffset:8,barSpacing:8},
+    crosshair:{mode:LightweightCharts.CrosshairMode.Normal},
+    handleScroll:{mouseWheel:true,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:false},
+    handleScale:{axisPressedMouseMove:true,mouseWheel:true,pinch:true}
+  });
+  activeInteractiveChart=chart;
+
+  const candleSeries=chart.addSeries(LightweightCharts.CandlestickSeries,{
+    upColor:'#55d68b',downColor:'#ff6978',borderVisible:false,wickUpColor:'#55d68b',wickDownColor:'#ff6978'
+  });
+  candleSeries.setData(candles.map(c=>({
+    time:Math.floor(c.ts/1000),open:c.open,high:c.high,low:c.low,close:c.close
+  })));
+
+  const addLine=(values,color,width=2)=>{
+    const s=chart.addSeries(LightweightCharts.LineSeries,{color,lineWidth:width,priceLineVisible:false,lastValueVisible:false});
+    s.setData(values.map((v,i)=>Number.isFinite(v)?{time:Math.floor(candles[i].ts/1000),value:v}:null).filter(Boolean));
+    return s;
+  };
+  addLine(indicators.ema50,'#f1c75b',2);
+  addLine(indicators.ema200,'#a68cff',2);
+  addLine(indicators.bollinger.upper,'#53769a',1);
+  addLine(indicators.bollinger.middle,'#7890aa',1);
+  addLine(indicators.bollinger.lower,'#53769a',1);
+
+  candleSeries.createPriceLine({price:levels.support,color:'#55d68b',lineWidth:2,lineStyle:2,axisLabelVisible:true,title:`${timeframe}m Destek`});
+  candleSeries.createPriceLine({price:levels.resistance,color:'#ffb85c',lineWidth:2,lineStyle:2,axisLabelVisible:true,title:`${timeframe}m Direnç`});
+
+  chart.timeScale().fitContent();
+  const ro=new ResizeObserver(()=>chart.applyOptions({width:container.clientWidth}));
+  ro.observe(container);
+
+  return{levels,breakout};
+}
+
+function renderProDetail(data,exchangeName){
+  data=normalizeBybitDetail(data);
+  const modal=document.getElementById('coinModal');
+  const content=document.getElementById('modalContent');
+  const sideClass=data.side==='long'?'positive':'negative';
+  const levels5=swingLevels(data.candles5,120,2);
+  const levels15=swingLevels(data.candles15?.length?data.candles15:data.candles5,100,2);
+  const break5=breakoutState(data.candles5,levels5);
+  const break15=breakoutState(data.candles15?.length?data.candles15:data.candles5,levels15);
+  const breakLabel=x=>x==='up'?'<span class="breakout-up">Yukarı kırılım</span>':x==='down'?'<span class="breakout-down">Aşağı kırılım</span>':'<span class="breakout-none">Kırılım yok</span>';
+
+  content.innerHTML=`
+    <div class="detail-grid">
+      <div>
+        <div class="detail-card">
+          <div class="detail-kpis">
+            <div class="detail-kpi"><div class="label">Borsa</div><div class="v">${exchangeName}</div></div>
+            <div class="detail-kpi"><div class="label">Yön Eğilimi</div><div class="v ${sideClass}">${data.side.toUpperCase()}</div></div>
+            <div class="detail-kpi"><div class="label">Skor</div><div class="v">${data.score}/100</div></div>
+            <div class="detail-kpi"><div class="label">Risk</div><div class="v">${data.risk}</div></div>
+          </div>
+        </div>
+        <div class="detail-card" style="margin-top:14px">
+          <div class="chart-toolbar">
+            <button class="tf-btn active" id="tf5">5 Dakika</button>
+            <button class="tf-btn" id="tf15">15 Dakika</button>
+            <span class="subvalue">Grafiği sürükleyebilir, fare tekeriyle yakınlaştırabilirsiniz.</span>
+          </div>
+          <div id="interactiveChart" class="interactive-chart"></div>
+        </div>
+      </div>
+      <div>
+        <div class="detail-card">
+          <b>Destek / Direnç ve Kırılım</b>
+          <div class="level-grid" style="margin-top:12px">
+            <div class="level-box"><div class="label">5m Destek</div><b>${formatPrice(levels5.support)}</b></div>
+            <div class="level-box"><div class="label">5m Direnç</div><b>${formatPrice(levels5.resistance)}</b></div>
+            <div class="level-box"><div class="label">5m Durum</div>${breakLabel(break5)}</div>
+            <div class="level-box"><div class="label">15m Destek</div><b>${formatPrice(levels15.support)}</b></div>
+            <div class="level-box"><div class="label">15m Direnç</div><b>${formatPrice(levels15.resistance)}</b></div>
+            <div class="level-box"><div class="label">15m Durum</div>${breakLabel(break15)}</div>
+          </div>
+        </div>
+        <div class="detail-card" style="margin-top:14px">
+          <b>Bağımsız Trader AI Kararı</b>
+          <div id="aiComment" class="ai-box ai-loading" style="margin-top:10px">Piyasa yönü ve işlem yaklaşımı ayrı ayrı hesaplanıyor...</div>
+        </div>
+        <div class="detail-card" style="margin-top:14px">
+          <b>Teknik Özet</b>
+          <ul class="analysis-list">
+            <li>EMA50 5m: ${data.emaSide5==='above'?'Üstünde':'Altında'}</li>
+            <li>EMA50 15m: ${data.emaSide15==='above'?'Üstünde':'Altında'}</li>
+            <li>EMA200 15m: ${data.ema200Side15==='above'?'Üstünde':'Altında'}</li>
+            <li>RSI5: ${data.rsi5.toFixed(1)} / RSI15: ${data.rsi15.toFixed(1)}</li>
+            <li>Stoch5 K/D: ${data.stoch5.k.toFixed(0)}/${data.stoch5.d.toFixed(0)}</li>
+            <li>Stoch15 K/D: ${data.stoch15.k.toFixed(0)}/${data.stoch15.d.toFixed(0)}</li>
+            <li>Hacim: ${data.volumeRatio5.toFixed(2)}x</li>
+            <li>Funding: %${data.fundingRate.toFixed(4)}</li>
+            <li>OI: ${compactMoney(data.openInterestValue)}</li>
+          </ul>
+        </div>
+      </div>
+    </div>`;
+
+  const chartContainer=document.getElementById('interactiveChart');
+  createInteractiveChart(chartContainer,data,'5');
+  const tf5=document.getElementById('tf5'),tf15=document.getElementById('tf15');
+  tf5.onclick=()=>{tf5.classList.add('active');tf15.classList.remove('active');createInteractiveChart(chartContainer,data,'5')};
+  tf15.onclick=()=>{tf15.classList.add('active');tf5.classList.remove('active');createInteractiveChart(chartContainer,data,'15')};
+
+  const marketPacket={
+    symbol:data.symbol,
+    exchange:exchangeName,
+    currentPrice:Number(String(data.price).replaceAll(',','')),
+    change24hPct:data.change,
+    fundingPct:data.fundingRate,
+    openInterestUsd:data.openInterestValue,
+    levels:{
+      m5:levels5,m15:levels15,
+      breakout5:break5,breakout15:break15
+    },
+    candles:{
+      m5:data.candles5.slice(-80).map(c=>[c.ts,c.open,c.high,c.low,c.close,c.turnover]),
+      m15:(data.candles15?.length?data.candles15:data.candles5).slice(-60).map(c=>[c.ts,c.open,c.high,c.low,c.close,c.turnover])
+    }
+  };
+
+  fetch('/api/ai-packet',{
+    method:'POST',
+    headers:{'content-type':'application/json'},
+    body:JSON.stringify({symbol:data.symbol,exchange:exchangeName,marketPacket})
+  })
+  .then(r=>r.json().then(body=>({ok:r.ok,body})))
+  .then(({ok,body})=>{
+    const box=document.getElementById('aiComment');
+    if(!box)return;
+    box.classList.remove('ai-loading');
+    box.textContent=ok&&body.ok?body.comment:(body.error||'AI yorumu alınamadı');
+  })
+  .catch(error=>{
+    const box=document.getElementById('aiComment');
+    if(box){box.classList.remove('ai-loading');box.textContent='AI yorumu alınamadı: '+error.message}
+  });
+}
+
+async function openCoinDetail(symbol){
+  const selected=document.getElementById('exchangeSelect').value;
+  const modal=document.getElementById('coinModal');
+  const content=document.getElementById('modalContent');
+  document.getElementById('modalTitle').textContent=symbol+' Profesyonel Analiz';
+  content.innerHTML='<div class="loading">Grafik ve piyasa verileri hazırlanıyor...</div>';
+  modal.classList.add('open');
+
+  try{
+    if(selected==='bybit'){
+      const response=await fetch(`/api/coin?symbol=${encodeURIComponent(symbol)}&t=${Date.now()}`,{cache:'no-store'});
+      const data=await response.json();
+      if(!response.ok||!data.ok)throw new Error(data.error||'Bybit detay verisi alınamadı');
+      renderProDetail(data,'Bybit Futures');
+      return;
+    }
+    const item=analysedForExchange(selected).find(x=>x.symbol===symbol);
+    if(!item)throw new Error('Coin analizi bulunamadı. Önce taramayı yenileyin.');
+    const data=buildUniversalDetail(item);
+    data.symbol=symbol;
+    data.candles15=item.candles15||[];
+    data.indicators5=makeIndicatorSet(data.candles5);
+    data.indicators15=makeIndicatorSet(data.candles15.length?data.candles15:data.candles5);
+    renderProDetail(data,exchangeDisplay(selected));
+  }catch(error){
+    content.innerHTML=`<div class="error">${error.message}</div>`;
+  }
+}
 
 loadDashboard();
 </script>

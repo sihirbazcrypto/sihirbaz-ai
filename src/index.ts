@@ -296,8 +296,8 @@ function buildScores(
   const stoch5 = stochRsi(close5);
   const stoch15 = stochRsi(close15);
 
-  const ema35_5 = ema(close5, 35);
-  const ema35_15 = ema(close15, 35);
+  const ema50_5 = ema(close5, 50);
+  const ema50_15 = ema(close15, 50);
   const ema200_5 = ema(close5, 200);
   const ema200_15 = ema(close15, 200);
 
@@ -307,13 +307,13 @@ function buildScores(
   const volRatio5 = volumeRatio(c5);
 
   const longTrendGate =
-    last5 > ema35_5 &&
-    last15 > ema35_15 &&
+    last5 > ema50_5 &&
+    last15 > ema50_15 &&
     last15 > ema200_15;
 
   const shortTrendGate =
-    last5 < ema35_5 &&
-    last15 < ema35_15 &&
+    last5 < ema50_5 &&
+    last15 < ema50_15 &&
     last15 < ema200_15;
 
   let longScore = 0;
@@ -325,16 +325,16 @@ function buildScores(
 
   if (longTrendGate) {
     longScore += 30;
-    reasonsLong.push("5m ve 15m EMA35 üstü, 15m EMA200 üstü");
+    reasonsLong.push("5m ve 15m EMA50 üstü, 15m EMA200 üstü");
   } else {
-    warningsLong.push("Long trend filtresi eksik");
+    warningsLong.push("Trend onayı yok");
   }
 
   if (shortTrendGate) {
     shortScore += 30;
-    reasonsShort.push("5m ve 15m EMA35 altı, 15m EMA200 altı");
+    reasonsShort.push("5m ve 15m EMA50 altı, 15m EMA200 altı");
   } else {
-    warningsShort.push("Short trend filtresi eksik");
+    warningsShort.push("Trend onayı yok");
   }
 
   if (stoch5.zone === "oversold") {
@@ -461,8 +461,8 @@ function buildScores(
     rsi15,
     stoch5,
     stoch15,
-    emaSide5: last5 >= ema35_5 ? "above" : "below",
-    emaSide15: last15 >= ema35_15 ? "above" : "below",
+    emaSide5: last5 >= ema50_5 ? "above" : "below",
+    emaSide15: last15 >= ema50_15 ? "above" : "below",
     ema200Side15: last15 >= ema200_15 ? "above" : "below",
     bb5,
     bb15,
@@ -580,7 +580,7 @@ async function getDashboard() {
 
   return {
     ok: true,
-    version: "0.7.0",
+    version: "1.1.0",
     exchange: "Bybit Futures",
     sourceType: "cloudflare-worker-live",
     apiSource: "api.bybit.com",
@@ -796,7 +796,7 @@ async function getCoinDetail(symbol: string) {
 
   return {
     ok: true,
-    version: "0.7.0",
+    version: "1.1.0",
     symbol,
     exchange: "Bybit Futures",
     price,
@@ -817,10 +817,11 @@ async function getCoinDetail(symbol: string) {
     reasons,
     warnings,
     analysis,
-    candles5: c5.slice(-100),
+    candles5: c5.slice(-160),
+    candles15: c15.slice(-160),
     indicators5: {
-      ema35: emaSeries(c5.map((c) => c.close), 35).slice(-100),
-      ema200: emaSeries(c5.map((c) => c.close), 200).slice(-100),
+      ema50: emaSeries(c5.map((c) => c.close), 50).slice(-160),
+      ema200: emaSeries(c5.map((c) => c.close), 200).slice(-160),
       bollinger: {
         upper: bollingerSeries(c5.map((c) => c.close), 20).upper.slice(-100),
         middle: bollingerSeries(c5.map((c) => c.close), 20).middle.slice(-100),
@@ -832,6 +833,28 @@ async function getCoinDetail(symbol: string) {
       stochRsi: {
         k: stochRsiSeries(c5.map((c) => c.close)).k.slice(-100),
         d: stochRsiSeries(c5.map((c) => c.close)).d.slice(-100),
+      },
+    },
+    indicators15: {
+      ema50: emaSeries(c15.map((c) => c.close), 50).slice(-160),
+      ema200: emaSeries(c15.map((c) => c.close), 200).slice(-160),
+      bollinger: {
+        upper: bollingerSeries(c15.map((c) => c.close), 20).upper.slice(-160),
+        middle: bollingerSeries(c15.map((c) => c.close), 20).middle.slice(-160),
+        lower: bollingerSeries(c15.map((c) => c.close), 20).lower.slice(-160),
+      },
+      rsi: (() => {
+        const values = rsiSeries(c15.map((c) => c.close), 14);
+        const aligned: Array<number | null> = new Array(c15.length).fill(null);
+        const start = c15.length - values.length;
+        values.forEach((value, index) => {
+          aligned[start + index] = value;
+        });
+        return aligned.slice(-160);
+      })(),
+      stochRsi: {
+        k: stochRsiSeries(c15.map((c) => c.close)).k.slice(-160),
+        d: stochRsiSeries(c15.map((c) => c.close)).d.slice(-160),
       },
     },
     updatedAtDisplay: new Date().toLocaleTimeString("tr-TR", {
@@ -1024,7 +1047,7 @@ Yanıtı tam olarak şu başlıklarla ver:
 BAĞIMSIZ PİYASA OKUMASI:
 [Ham fiyat yapısını kendi yorumunla açıkla.]
 
-KURAL MOTORUYLA KARŞILAŞTIRMA:
+PİYASA YAPISI VE KIRILIM:
 [Katıldığın veya çeliştiğin noktayı açıkla.]
 
 ANA RİSK:
@@ -1055,6 +1078,349 @@ AI KARARI:
     decision,
     agreement: agreementLabel(detail.side, detail.score, decision),
   };
+}
+
+
+type TraderAiDirection = "BULLISH" | "BEARISH" | "NEUTRAL";
+type TraderAiAction =
+  | "LONG_SETUP_WATCH"
+  | "SHORT_SETUP_WATCH"
+  | "WAIT_PULLBACK"
+  | "WAIT_RETEST"
+  | "WAIT_BREAKOUT"
+  | "NO_TRADE";
+type TraderAiRisk = "LOW" | "MEDIUM" | "HIGH";
+
+type TraderAiOutput = {
+  market_direction: TraderAiDirection;
+  trade_action: TraderAiAction;
+  risk: TraderAiRisk;
+  confidence: number;
+  entry_condition: string;
+  invalidation: string;
+  rationale: string[];
+  warning: string;
+};
+
+function traderAiSchema() {
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      market_direction: {
+        type: "string",
+        enum: ["BULLISH", "BEARISH", "NEUTRAL"],
+      },
+      trade_action: {
+        type: "string",
+        enum: [
+          "LONG_SETUP_WATCH",
+          "SHORT_SETUP_WATCH",
+          "WAIT_PULLBACK",
+          "WAIT_RETEST",
+          "WAIT_BREAKOUT",
+          "NO_TRADE",
+        ],
+      },
+      risk: {
+        type: "string",
+        enum: ["LOW", "MEDIUM", "HIGH"],
+      },
+      confidence: {
+        type: "number",
+        minimum: 0,
+        maximum: 100,
+      },
+      entry_condition: { type: "string" },
+      invalidation: { type: "string" },
+      rationale: {
+        type: "array",
+        minItems: 2,
+        maxItems: 5,
+        items: { type: "string" },
+      },
+      warning: { type: "string" },
+    },
+    required: [
+      "market_direction",
+      "trade_action",
+      "risk",
+      "confidence",
+      "entry_condition",
+      "invalidation",
+      "rationale",
+      "warning",
+    ],
+  };
+}
+
+function parseTraderAiResult(result: unknown): TraderAiOutput {
+  const raw =
+    result &&
+    typeof result === "object" &&
+    "response" in result
+      ? (result as { response: unknown }).response
+      : result;
+
+  if (raw && typeof raw === "object") {
+    return raw as TraderAiOutput;
+  }
+
+  if (typeof raw === "string") {
+    return JSON.parse(raw) as TraderAiOutput;
+  }
+
+  throw new Error("AI yapılandırılmış yanıt üretmedi");
+}
+
+function finiteNumber(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function candleSlope(candles: unknown): number {
+  if (!Array.isArray(candles) || candles.length < 2) return 0;
+  const first = candles[0];
+  const last = candles[candles.length - 1];
+  if (!Array.isArray(first) || !Array.isArray(last)) return 0;
+  const firstClose = finiteNumber(first[4]);
+  const lastClose = finiteNumber(last[4]);
+  return firstClose !== 0
+    ? ((lastClose - firstClose) / firstClose) * 100
+    : 0;
+}
+
+function independentMarketGuard(marketPacket: unknown): {
+  direction: TraderAiDirection;
+  bullishPoints: number;
+  bearishPoints: number;
+  stretchedUp: boolean;
+  stretchedDown: boolean;
+  breakout5: string;
+  breakout15: string;
+  slope5: number;
+  slope15: number;
+} {
+  const packet =
+    marketPacket && typeof marketPacket === "object"
+      ? (marketPacket as Record<string, unknown>)
+      : {};
+
+  const change24h = finiteNumber(packet.change24hPct);
+  const levels =
+    packet.levels && typeof packet.levels === "object"
+      ? (packet.levels as Record<string, unknown>)
+      : {};
+  const breakout5 = String(levels.breakout5 || "none");
+  const breakout15 = String(levels.breakout15 || "none");
+
+  const candles =
+    packet.candles && typeof packet.candles === "object"
+      ? (packet.candles as Record<string, unknown>)
+      : {};
+  const slope5 = candleSlope(candles.m5);
+  const slope15 = candleSlope(candles.m15);
+
+  let bullishPoints = 0;
+  let bearishPoints = 0;
+
+  if (breakout5 === "up") bullishPoints += 3;
+  if (breakout15 === "up") bullishPoints += 4;
+  if (breakout5 === "down") bearishPoints += 3;
+  if (breakout15 === "down") bearishPoints += 4;
+
+  if (slope5 > 0.6) bullishPoints += 2;
+  if (slope15 > 1.0) bullishPoints += 3;
+  if (slope5 < -0.6) bearishPoints += 2;
+  if (slope15 < -1.0) bearishPoints += 3;
+
+  if (change24h > 4) bullishPoints += 1;
+  if (change24h < -4) bearishPoints += 1;
+
+  const direction: TraderAiDirection =
+    bullishPoints >= bearishPoints + 3
+      ? "BULLISH"
+      : bearishPoints >= bullishPoints + 3
+        ? "BEARISH"
+        : "NEUTRAL";
+
+  return {
+    direction,
+    bullishPoints,
+    bearishPoints,
+    stretchedUp: change24h >= 10,
+    stretchedDown: change24h <= -10,
+    breakout5,
+    breakout15,
+    slope5,
+    slope15,
+  };
+}
+
+function enforceTraderConsistency(
+  ai: TraderAiOutput,
+  marketPacket: unknown,
+): TraderAiOutput {
+  const guard = independentMarketGuard(marketPacket);
+  const output: TraderAiOutput = {
+    ...ai,
+    confidence: Math.max(0, Math.min(100, Math.round(ai.confidence))),
+    rationale: Array.isArray(ai.rationale) ? ai.rationale.slice(0, 5) : [],
+  };
+
+  if (guard.direction === "BEARISH") {
+    output.market_direction = "BEARISH";
+
+    if (guard.stretchedDown) {
+      output.trade_action = "WAIT_RETEST";
+      output.entry_condition =
+        "Düşüşü kovalamak yerine kırılan desteğin aşağıdan test edilmesini ve reddedilmesini bekle.";
+    } else if (
+      guard.breakout5 === "down" ||
+      guard.breakout15 === "down"
+    ) {
+      output.trade_action = "SHORT_SETUP_WATCH";
+      output.entry_condition =
+        "Destek altında kapanışın korunması veya kırılan seviyenin direnç olarak çalışması gerekir.";
+    } else {
+      output.trade_action = "WAIT_BREAKOUT";
+      output.entry_condition =
+        "Yeni short yaklaşımı için geçerli desteğin altında teyitli kapanış bekle.";
+    }
+
+    if (
+      ai.market_direction === "BULLISH" ||
+      ai.trade_action === "LONG_SETUP_WATCH"
+    ) {
+      output.warning =
+        "Modelin ilk long eğilimi ham fiyat yapısıyla çeliştiği için güvenlik filtresi tarafından reddedildi.";
+    }
+  }
+
+  if (guard.direction === "BULLISH") {
+    output.market_direction = "BULLISH";
+
+    if (guard.stretchedUp) {
+      output.trade_action = "WAIT_PULLBACK";
+      output.entry_condition =
+        "Yükselişi kovalamak yerine kırılan direncin destek olarak test edilmesini bekle.";
+    } else if (
+      guard.breakout5 === "up" ||
+      guard.breakout15 === "up"
+    ) {
+      output.trade_action = "LONG_SETUP_WATCH";
+      output.entry_condition =
+        "Direnç üstü kapanış korunmalı veya kırılan seviye destek olarak doğrulanmalı.";
+    } else {
+      output.trade_action = "WAIT_BREAKOUT";
+      output.entry_condition =
+        "Yeni long yaklaşımı için geçerli direncin üzerinde teyitli kapanış bekle.";
+    }
+
+    if (
+      ai.market_direction === "BEARISH" ||
+      ai.trade_action === "SHORT_SETUP_WATCH"
+    ) {
+      output.warning =
+        "Modelin ilk short eğilimi ham fiyat yapısıyla çeliştiği için güvenlik filtresi tarafından reddedildi.";
+    }
+  }
+
+  if (guard.direction === "NEUTRAL") {
+    output.market_direction = "NEUTRAL";
+    output.trade_action = "NO_TRADE";
+    output.entry_condition =
+      "5m ve 15m yönü aynı tarafa dönmeden ve destek/direnç kırılımı teyit edilmeden işlem yaklaşımı oluşturma.";
+    output.confidence = Math.min(output.confidence, 55);
+  }
+
+  if (output.rationale.length < 2) {
+    output.rationale = [
+      `5m fiyat eğimi: %${guard.slope5.toFixed(2)}`,
+      `15m fiyat eğimi: %${guard.slope15.toFixed(2)}`,
+    ];
+  }
+
+  return output;
+}
+
+function directionTr(value: TraderAiDirection): string {
+  if (value === "BULLISH") return "YUKARI YÖNLÜ";
+  if (value === "BEARISH") return "AŞAĞI YÖNLÜ";
+  return "NÖTR / KARARSIZ";
+}
+
+function actionTr(value: TraderAiAction): string {
+  const map: Record<TraderAiAction, string> = {
+    LONG_SETUP_WATCH: "LONG KURULUMU İZLE",
+    SHORT_SETUP_WATCH: "SHORT KURULUMU İZLE",
+    WAIT_PULLBACK: "GERİ ÇEKİLME BEKLE",
+    WAIT_RETEST: "KIRILAN SEVİYE TESTİNİ BEKLE",
+    WAIT_BREAKOUT: "KIRILIM TEYİDİ BEKLE",
+    NO_TRADE: "İŞLEM YOK",
+  };
+  return map[value];
+}
+
+function riskTr(value: TraderAiRisk): string {
+  if (value === "LOW") return "DÜŞÜK";
+  if (value === "MEDIUM") return "ORTA";
+  return "YÜKSEK";
+}
+
+function formatTraderComment(ai: TraderAiOutput): string {
+  return [
+    `PİYASA YÖNÜ: ${directionTr(ai.market_direction)}`,
+    `İŞLEM YAKLAŞIMI: ${actionTr(ai.trade_action)}`,
+    `RİSK: ${riskTr(ai.risk)}`,
+    `GÜVEN: ${ai.confidence}/100`,
+    "",
+    "TRADER GEREKÇESİ:",
+    ...ai.rationale.map((item) => `• ${item}`),
+    "",
+    `GİRİŞ İÇİN GEREKEN TEYİT: ${ai.entry_condition}`,
+    `GEÇERSİZLİK: ${ai.invalidation}`,
+    `UYARI: ${ai.warning}`,
+  ].join("\n");
+}
+
+async function fetchMexcPublic(path: string): Promise<Response> {
+  const allowed =
+    path === "/api/v1/contract/ticker" ||
+    path.startsWith("/api/v1/contract/kline/") ||
+    path.startsWith("/api/v1/contract/funding_rate/");
+
+  if (!allowed) {
+    return json({ ok: false, error: "MEXC yolu izinli değil" }, 400);
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12_000);
+
+  try {
+    const response = await fetch(`https://contract.mexc.com${path}`, {
+      signal: controller.signal,
+      headers: {
+        accept: "application/json",
+        "user-agent": "SihirbazAI/1.1",
+      },
+    });
+
+    const body = await response.text();
+
+    return new Response(body, {
+      status: response.status,
+      headers: {
+        "content-type":
+          response.headers.get("content-type") ||
+          "application/json; charset=utf-8",
+        "cache-control": "no-store",
+        "access-control-allow-origin": "*",
+      },
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 
@@ -1132,11 +1498,112 @@ export default {
       }
     }
 
+    if (url.pathname === "/api/mexc-proxy") {
+      try {
+        const path = url.searchParams.get("path") || "";
+        return await fetchMexcPublic(path);
+      } catch (error) {
+        return json(
+          {
+            ok: false,
+            error:
+              error instanceof Error
+                ? `MEXC bağlantısı başarısız: ${error.message}`
+                : "MEXC bağlantısı başarısız",
+          },
+          502,
+        );
+      }
+    }
+
+    if (url.pathname === "/api/ai-packet" && request.method === "POST") {
+      try {
+        const packet = await request.json<{
+          symbol: string;
+          exchange: string;
+          marketPacket: unknown;
+        }>();
+
+        if (!packet?.symbol || !packet?.marketPacket) {
+          return json({ ok: false, error: "Geçersiz AI veri paketi" }, 400);
+        }
+
+        const prompt = `
+Sen bağımsız çalışan profesyonel bir kripto vadeli işlem piyasa okuyucususun.
+
+Görevin:
+- Ham 5m ve 15m OHLCV mumlarını, destek/direnç seviyelerini, kapanış kırılımlarını,
+  24 saatlik değişimi, funding ve açık ilgiyi birlikte değerlendir.
+- Tek başına negatif funding nedeniyle LONG deme.
+- Tek başına büyük düşüş nedeniyle SHORT deme.
+- Fiyat sert düşmüşse düşüşü kovalamak yerine retest/tepki riskini hesaba kat.
+- Piyasa yönü ile hemen işlem açma kararını birbirinden ayır.
+- Hazır teknik skor veya kural motoru sonucu sana verilmemiştir.
+- Kesin kazanç veya garanti verme.
+- Çıktıyı yalnızca istenen JSON şemasında üret.
+
+Coin: ${packet.symbol}
+Borsa: ${packet.exchange}
+Ham piyasa paketi:
+${JSON.stringify(packet.marketPacket)}
+`;
+
+        const result = await env.AI.run(
+          "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+          {
+            messages: [
+              {
+                role: "system",
+                content:
+                  "Ham piyasa yapısından bağımsız yön ve işlem yaklaşımı üreten ihtiyatlı bir trader gibi davran.",
+              },
+              { role: "user", content: prompt },
+            ],
+            response_format: {
+              type: "json_schema",
+              json_schema: traderAiSchema(),
+            },
+            max_tokens: 520,
+            temperature: 0.2,
+          },
+        );
+
+        const rawAi = parseTraderAiResult(result);
+        const ai = enforceTraderConsistency(rawAi, packet.marketPacket);
+
+        return json({
+          ok: true,
+          symbol: packet.symbol,
+          model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+          marketDirection: ai.market_direction,
+          tradeAction: ai.trade_action,
+          risk: ai.risk,
+          confidence: ai.confidence,
+          entryCondition: ai.entry_condition,
+          invalidation: ai.invalidation,
+          rationale: ai.rationale,
+          warning: ai.warning,
+          comment: formatTraderComment(ai),
+        });
+      } catch (error) {
+        return json(
+          {
+            ok: false,
+            error:
+              error instanceof Error
+                ? `AI karar motoru hatası: ${error.message}`
+                : "AI karar motoru hatası",
+          },
+          502,
+        );
+      }
+    }
+
     if (url.pathname === "/api/health") {
       return json({
         ok: true,
         service: "sihirbaz-ai",
-        version: "0.7.0",
+        version: "1.1.0",
         time: new Date().toISOString(),
       });
     }
