@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sihirbaz AI</title>
+  <style>
+    :root{--bg:#07111f;--panel:#0e1b2d;--line:#1f3048;--text:#eef4ff;--muted:#8fa3bd;--cyan:#5bd6ff;--green:#76e39a;--red:#ff7e8d}
+    *{box-sizing:border-box} body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text)}
+    .topbar{min-height:72px;padding:0 28px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);background:#0a1626}
+    .brand{font-size:24px;font-weight:800}.brand span{color:var(--cyan)} .status{color:var(--green);font-size:14px}
+    .layout{display:grid;grid-template-columns:220px 1fr;min-height:calc(100vh - 72px)}
+    .sidebar{padding:24px 16px;border-right:1px solid var(--line);background:#091422}
+    .menu-item{padding:13px 14px;margin-bottom:8px;border-radius:10px;color:#aebed4}.menu-item.active{background:#13243a;color:#fff}
+    .content{padding:26px}.hero h1{margin:0 0 8px;font-size:30px}.hero p{margin:0;color:var(--muted)}
+    .filters{display:flex;gap:12px;margin:22px 0;flex-wrap:wrap} select,button{background:#101e31;color:#fff;border:1px solid #263852;border-radius:8px;padding:10px 12px}
+    button{cursor:pointer}.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:24px}
+    .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px}.label{color:var(--muted);font-size:13px}.value{margin-top:8px;font-size:24px;font-weight:700}
+    .positive{color:var(--green)}.negative{color:var(--red)}.tables{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    .table-box{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}.table-title{padding:16px 18px;font-weight:700;border-bottom:1px solid var(--line)}
+    table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:13px 16px;border-bottom:1px solid #16253a;font-size:14px}th{color:#7f94ae}.score{font-weight:700}.loading,.error{padding:18px;color:var(--muted)}.error{color:var(--red)}
+    @media(max-width:1000px){.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.tables{grid-template-columns:1fr}}
+    @media(max-width:700px){.layout{grid-template-columns:1fr}.sidebar{display:none}.cards{grid-template-columns:1fr}.content{padding:16px}}
+  </style>
+</head>
+<body>
+<header class="topbar"><div class="brand">SİHİRBAZ <span>AI</span></div><div class="status">● Sistem aktif</div></header>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="menu-item active">Dashboard</div><div class="menu-item">Long Tarama</div><div class="menu-item">Short Tarama</div>
+    <div class="menu-item">Open Interest</div><div class="menu-item">Funding</div><div class="menu-item">AI Analiz</div><div class="menu-item">Ayarlar</div>
+  </aside>
+  <main class="content">
+    <section class="hero"><h1>Piyasa Tarama Paneli</h1><p>Canlı piyasa verileri ve ilk coin skorlama motoru.</p></section>
+    <div class="filters">
+      <select><option>Binance Futures</option></select>
+      <select><option>24 Saatlik İlk Skor</option></select>
+      <button onclick="loadDashboard()">Yenile</button>
+    </div>
+    <section class="cards">
+      <div class="card"><div class="label">Taranan Coin</div><div class="value" id="coinCount">-</div></div>
+      <div class="card"><div class="label">Long Adayı</div><div class="value positive" id="longCount">-</div></div>
+      <div class="card"><div class="label">Short Adayı</div><div class="value negative" id="shortCount">-</div></div>
+      <div class="card"><div class="label">Son Güncelleme</div><div class="value" id="updatedAt">-</div></div>
+    </section>
+    <section class="tables">
+      <div class="table-box"><div class="table-title positive">En Güçlü Long Coinler</div><div id="longTable" class="loading">Veriler yükleniyor...</div></div>
+      <div class="table-box"><div class="table-title negative">En Güçlü Short Coinler</div><div id="shortTable" class="loading">Veriler yükleniyor...</div></div>
+    </section>
+  </main>
+</div>
+<script>
+function renderTable(items,direction){
+  if(!items?.length) return '<div class="loading">Henüz veri yok.</div>';
+  return `<table><thead><tr><th>Coin</th><th>Fiyat</th><th>24s %</th><th>Skor</th></tr></thead><tbody>${
+    items.map(item=>`<tr><td>${item.symbol}</td><td>${item.price}</td><td class="${item.change>=0?'positive':'negative'}">${item.change.toFixed(2)}%</td><td class="score ${direction==='long'?'positive':'negative'}">${item.score}</td></tr>`).join('')
+  }</tbody></table>`;
+}
+async function loadDashboard(){
+  for(const id of ['longTable','shortTable']) document.getElementById(id).innerHTML='<div class="loading">Veriler yükleniyor...</div>';
+  try{
+    const response=await fetch('/api/dashboard');
+    const data=await response.json();
+    if(!response.ok) throw new Error(data.message||'API yanıt vermedi');
+    coinCount.textContent=data.coinCount; longCount.textContent=data.long.length; shortCount.textContent=data.short.length; updatedAt.textContent=data.updatedAt;
+    longTable.innerHTML=renderTable(data.long,'long'); shortTable.innerHTML=renderTable(data.short,'short');
+  }catch(error){
+    longTable.innerHTML=`<div class="error">${error.message}</div>`;
+    shortTable.innerHTML=`<div class="error">${error.message}</div>`;
+  }
+}
+loadDashboard();
+</script>
+</body>
+</html>
