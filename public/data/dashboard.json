@@ -1,0 +1,12 @@
+{
+  "ok": false,
+  "version": "0.1.2",
+  "sourceType": "github-actions",
+  "exchange": "Binance Futures",
+  "coinCount": 0,
+  "updatedAt": null,
+  "updatedAtDisplay": "İlk tarama bekleniyor",
+  "long": [],
+  "short": [],
+  "error": "GitHub Actions ilk kez çalıştırılmadı."
+}
