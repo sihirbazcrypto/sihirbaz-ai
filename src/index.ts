@@ -479,7 +479,7 @@ function buildScores(
   };
 }
 
-async function getKlines(symbol: string, interval: "5" | "15"): Promise<Candle[]> {
+async function getKlines(symbol: string, interval: "5" | "15" | "60"): Promise<Candle[]> {
   const result = await bybitFetch<KlineResult>(
     `/v5/market/kline?category=linear&symbol=${encodeURIComponent(
       symbol,
@@ -580,7 +580,7 @@ async function getDashboard() {
 
   return {
     ok: true,
-    version: "0.6.0",
+    version: "0.7.0",
     exchange: "Bybit Futures",
     sourceType: "cloudflare-worker-live",
     apiSource: "api.bybit.com",
@@ -796,7 +796,7 @@ async function getCoinDetail(symbol: string) {
 
   return {
     ok: true,
-    version: "0.6.0",
+    version: "0.7.0",
     symbol,
     exchange: "Bybit Futures",
     price,
@@ -843,45 +843,195 @@ async function getCoinDetail(symbol: string) {
   };
 }
 
+
+function pctChange(from: number, to: number): number {
+  return from !== 0 ? ((to - from) / from) * 100 : 0;
+}
+
+function linearSlopePct(values: number[], lookback: number): number {
+  const slice = values.slice(-lookback);
+  if (slice.length < 2 || slice[0] === 0) return 0;
+  return pctChange(slice[0], slice.at(-1) ?? slice[0]);
+}
+
+function recentRangePosition(candles: Candle[], lookback = 40): number {
+  const slice = candles.slice(-lookback);
+  if (!slice.length) return 0.5;
+  const high = Math.max(...slice.map((c) => c.high));
+  const low = Math.min(...slice.map((c) => c.low));
+  const close = slice.at(-1)?.close ?? low;
+  return high === low ? 0.5 : clamp((close - low) / (high - low), 0, 1);
+}
+
+function detectStructure(candles: Candle[]) {
+  const slice = candles.slice(-80);
+  const closes = slice.map((c) => c.close);
+  const highs = slice.map((c) => c.high);
+  const lows = slice.map((c) => c.low);
+
+  const recent20 = slice.slice(-20);
+  const previous20 = slice.slice(-40, -20);
+
+  const recentHigh = recent20.length
+    ? Math.max(...recent20.map((c) => c.high))
+    : 0;
+  const recentLow = recent20.length
+    ? Math.min(...recent20.map((c) => c.low))
+    : 0;
+  const previousHigh = previous20.length
+    ? Math.max(...previous20.map((c) => c.high))
+    : recentHigh;
+  const previousLow = previous20.length
+    ? Math.min(...previous20.map((c) => c.low))
+    : recentLow;
+
+  let structure = "yatay";
+  if (recentHigh > previousHigh && recentLow > previousLow) {
+    structure = "yükselen tepe ve yükselen dip";
+  } else if (recentHigh < previousHigh && recentLow < previousLow) {
+    structure = "düşen tepe ve düşen dip";
+  } else if (recentHigh > previousHigh && recentLow < previousLow) {
+    structure = "genişleyen volatilite";
+  }
+
+  const last = slice.at(-1);
+  const previous = slice.at(-2);
+  const bodyPct =
+    last && last.open !== 0
+      ? (Math.abs(last.close - last.open) / last.open) * 100
+      : 0;
+
+  return {
+    structure,
+    slope20Pct: linearSlopePct(closes, 20),
+    slope50Pct: linearSlopePct(closes, 50),
+    rangePosition: recentRangePosition(slice, 40),
+    recentHigh,
+    recentLow,
+    previousHigh,
+    previousLow,
+    lastCandle: last
+      ? {
+          open: last.open,
+          high: last.high,
+          low: last.low,
+          close: last.close,
+          bodyPct,
+          direction: last.close >= last.open ? "yeşil" : "kırmızı",
+        }
+      : null,
+    lastCloseChangePct:
+      last && previous ? pctChange(previous.close, last.close) : 0,
+    highest80: highs.length ? Math.max(...highs) : 0,
+    lowest80: lows.length ? Math.min(...lows) : 0,
+  };
+}
+
+function compactCandles(candles: Candle[], count: number) {
+  return candles.slice(-count).map((c) => [
+    c.ts,
+    Number(c.open.toPrecision(8)),
+    Number(c.high.toPrecision(8)),
+    Number(c.low.toPrecision(8)),
+    Number(c.close.toPrecision(8)),
+    Number(c.turnover.toPrecision(7)),
+  ]);
+}
+
+function agreementLabel(
+  engineSide: "long" | "short",
+  engineScore: number,
+  aiDecision: string,
+) {
+  const normalized = aiDecision.toUpperCase();
+  const same =
+    (engineSide === "long" && normalized.includes("LONG")) ||
+    (engineSide === "short" && normalized.includes("SHORT"));
+
+  if (same && engineScore >= 70) return "Yüksek";
+  if (same) return "Orta";
+  if (normalized.includes("BEKLE") || normalized.includes("İŞLEM YOK")) {
+    return "Düşük";
+  }
+  return "Çelişkili";
+}
+
+function extractDecision(text: string): string {
+  const match = text.match(/AI KARARI\s*:\s*([^\n]+)/i);
+  return match?.[1]?.trim() || "NET DEĞİL";
+}
+
 async function getAiComment(
   env: AppEnv,
   detail: Awaited<ReturnType<typeof getCoinDetail>>,
-): Promise<string> {
-  const sideText = detail.side === "long" ? "LONG" : "SHORT";
+): Promise<{
+  comment: string;
+  decision: string;
+  agreement: string;
+}> {
+  const candles15 = await getKlines(detail.symbol, "15");
+  const candles60 = await getKlines(detail.symbol, "60");
+
+  const structure5 = detectStructure(detail.candles5);
+  const structure15 = detectStructure(candles15);
+  const structure60 = detectStructure(candles60);
+
+  const marketPacket = {
+    symbol: detail.symbol,
+    exchange: detail.exchange,
+    currentPrice: detail.price,
+    change24hPct: detail.change,
+    fundingPct: detail.fundingRate,
+    openInterestUsd: detail.openInterestValue,
+    ruleEngine: {
+      preferredSide: detail.side,
+      score: detail.score,
+      status: detail.ready ? "HAZIR" : "IZLE",
+      risk: detail.risk,
+    },
+    structure: {
+      m5: structure5,
+      m15: structure15,
+      h1: structure60,
+    },
+    candles: {
+      m5_last40: compactCandles(detail.candles5, 40),
+      m15_last32: compactCandles(candles15, 32),
+      h1_last24: compactCandles(candles60, 24),
+      format: "[timestamp,open,high,low,close,turnover]",
+    },
+  };
 
   const prompt = `
-Sen Sihirbaz AI adlı kripto vadeli işlem analiz asistanısın.
-Yalnızca verilen sayısal ve teknik verilere dayan.
-Kesin kazanç, başarı yüzdesi veya garanti verme.
-Kısa, açık ve Türkçe yaz. En fazla 130 kelime kullan.
+Sen bağımsız çalışan, ihtiyatlı bir kripto vadeli işlem piyasa analistisin.
 
-Coin: ${detail.symbol}
-Borsa: Bybit Futures
-Tercih edilen yön: ${sideText}
-Skor: ${detail.score}/100
-Durum: ${detail.ready ? "HAZIR" : "İZLE"}
-Risk: ${detail.risk}
-24 saat değişim: ${detail.change.toFixed(2)}%
-RSI5: ${detail.analysis.rsi5.toFixed(1)}
-RSI15: ${detail.analysis.rsi15.toFixed(1)}
-Stoch RSI 5m K/D: ${detail.analysis.stoch5.k.toFixed(0)}/${detail.analysis.stoch5.d.toFixed(0)}
-Stoch RSI 15m K/D: ${detail.analysis.stoch15.k.toFixed(0)}/${detail.analysis.stoch15.d.toFixed(0)}
-EMA35 5m: ${detail.analysis.emaSide5}
-EMA35 15m: ${detail.analysis.emaSide15}
-EMA200 15m: ${detail.analysis.ema200Side15}
-Bollinger 5m: ${detail.analysis.bb5}
-Hacim oranı: ${detail.analysis.volumeRatio5.toFixed(2)}x
-ATR: ${detail.analysis.atrPct5.toFixed(2)}%
-Funding: ${detail.fundingRate.toFixed(4)}%
-Open Interest: ${detail.openInterestValue}
-Olumlu nedenler: ${detail.reasons.join("; ") || "Yok"}
-Uyarılar: ${detail.warnings.join("; ") || "Yok"}
+ÖNEMLİ KURALLAR:
+- Kural motorunun yönüne ve skoruna katılmak zorunda değilsin.
+- Hazır teknik neden listesini tekrar etme.
+- Öncelikle ham OHLCV mumlarını ve 5m/15m/1h piyasa yapısını kendin değerlendir.
+- Son tepe/dip ilişkisi, trend devamı veya bozulması, mum davranışı, volatilite,
+  hacim/turnover, fiyatın son aralık içindeki konumu, funding ve açık pozisyonu birlikte yorumla.
+- Veri yeterli değilse açıkça söyle.
+- Kesin kazanç, garanti, başarı ihtimali veya yatırım tavsiyesi verme.
+- Gerekirse kural motoruyla çeliş.
+- Türkçe ve en fazla 180 kelime yaz.
 
-Şu sırayla cevapla:
-1. Genel değerlendirme
-2. Girişi destekleyen veya engelleyen ana neden
-3. En önemli risk
-4. "Sonuç:" ile başlayan tek cümlelik karar: HAZIR, GERİ ÇEKİLME BEKLE veya UZAK DUR.
+PİYASA VERİ PAKETİ:
+${JSON.stringify(marketPacket)}
+
+Yanıtı tam olarak şu başlıklarla ver:
+
+BAĞIMSIZ PİYASA OKUMASI:
+[Ham fiyat yapısını kendi yorumunla açıkla.]
+
+KURAL MOTORUYLA KARŞILAŞTIRMA:
+[Katıldığın veya çeliştiğin noktayı açıkla.]
+
+ANA RİSK:
+[En önemli tek riski belirt.]
+
+AI KARARI:
+[Yalnızca şu seçeneklerden biri: LONG İZLE, SHORT İZLE, GERİ ÇEKİLME BEKLE, TEPKİ BEKLE, İŞLEM YOK]
 `;
 
   const result = await env.AI.run("@cf/meta/llama-3.3-70b-instruct-fp8-fast", {
@@ -889,15 +1039,22 @@ Uyarılar: ${detail.warnings.join("; ") || "Yok"}
       {
         role: "system",
         content:
-          "Sen açıklanabilir teknik analiz yapan ihtiyatlı bir kripto piyasa asistanısın.",
+          "Sen ham piyasa verisini bağımsız analiz eden ve kural motoruna gerektiğinde itiraz eden temkinli bir piyasa analistisin.",
       },
       { role: "user", content: prompt },
     ],
-    max_tokens: 260,
-    temperature: 0.25,
+    max_tokens: 420,
+    temperature: 0.35,
   });
 
-  return safeAiText(result);
+  const comment = safeAiText(result);
+  const decision = extractDecision(comment);
+
+  return {
+    comment,
+    decision,
+    agreement: agreementLabel(detail.side, detail.score, decision),
+  };
 }
 
 
@@ -946,13 +1103,20 @@ export default {
         }
 
         const detail = await getCoinDetail(symbol);
-        const comment = await getAiComment(env, detail);
+        const ai = await getAiComment(env, detail);
 
         return json({
           ok: true,
           symbol,
           model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-          comment,
+          comment: ai.comment,
+          decision: ai.decision,
+          agreement: ai.agreement,
+          ruleEngine: {
+            side: detail.side,
+            score: detail.score,
+            ready: detail.ready,
+          },
         });
       } catch (error) {
         return json(
@@ -972,7 +1136,7 @@ export default {
       return json({
         ok: true,
         service: "sihirbaz-ai",
-        version: "0.6.0",
+        version: "0.7.0",
         time: new Date().toISOString(),
       });
     }
@@ -980,4 +1144,3 @@ export default {
     return new Response("Not Found", { status: 404 });
   },
 } satisfies ExportedHandler<AppEnv>;
-
