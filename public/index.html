@@ -1456,7 +1456,8 @@ let radarFilter='all';
 let radarLastUpdatedAt='';
 let radarLastSeenMs=0;
 const RADAR_SCAN_INTERVAL_MS=30000;
-const RADAR_UI_POLL_MS=3000;
+const RADAR_UI_POLL_MS=30000;
+let radarLoading=false;
 const radarCooldown=new Map();
 const RADAR_COOLDOWN_MS=5*60*1000;
 
@@ -1481,15 +1482,19 @@ function renderRadar(){
   radarRsi.innerHTML=['5m','15m','1h'].map(tf=>{const rows=rsi.filter(e=>e.timeframe===tf).slice(0,8);return `<div class="rsi-col"><h4>${tf==='1h'?'1 SAAT':tf.toUpperCase()}</h4>${rows.length?rows.map(e=>`<div class="rsi-row" onclick="openRadarCoinByKey('${e.eventKey.replace(/'/g,"\\'")}')"><span>${e.symbol}</span><b class="${e.direction==='up'?'positive':'negative'}">${Number(e.value).toFixed(1)}</b></div>`).join(''):'<div class="radar-empty">Sinyal yok</div>'}</div>`}).join('');
 }
 async function loadMarketRadar(force=false){
+  if(radarLoading)return;
+  radarLoading=true;
   try{
     radarStatus.textContent='Radar taranıyor...';
-    let response=await fetch(`/data/radar.json?t=${Date.now()}`,{cache:'no-store',credentials:'same-origin'});
+    // Canlı ortamda her yenilemede Worker API gerçek piyasa taraması yapar.
+    // Statik radar.json yalnızca API geçici olarak yanıt vermezse yedek olarak kullanılır.
+    let response=await fetch(`/api/radar?t=${Date.now()}`,{cache:'no-store',credentials:'same-origin'});
     let data=await response.json().catch(()=>null);
     if(!response.ok||!data?.ok){
-      response=await fetch(`/api/radar?t=${Date.now()}`,{cache:'no-store',credentials:'same-origin'});
-      data=await response.json();
+      response=await fetch(`/data/radar.json?t=${Date.now()}`,{cache:'no-store',credentials:'same-origin'});
+      data=await response.json().catch(()=>null);
     }
-    if(!response.ok||!data.ok)throw new Error(data.error||'Radar alınamadı');
+    if(!response.ok||!data?.ok)throw new Error(data?.error||'Radar alınamadı');
     const now=Date.now();
     const accepted=[];
     for(const event of data.events||[]){
@@ -1510,6 +1515,8 @@ async function loadMarketRadar(force=false){
   }catch(error){
     radarStatus.textContent=`Radar bağlantı hatası: ${error.message}`;
     const pulse=document.getElementById('radarPulse');if(pulse)pulse.className='live-pulse error';
+  }finally{
+    radarLoading=false;
   }
 }
 function updateRadarClock(){
