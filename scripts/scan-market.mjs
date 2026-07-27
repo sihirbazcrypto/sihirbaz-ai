@@ -1,194 +1,52 @@
-import { writeFile, mkdir } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 
-const OUTPUT_PATH = new URL("../public/data/dashboard.json", import.meta.url);
+const DATA_DIR = path.resolve(process.cwd(), 'public/data');
+const OUTPUT = path.join(DATA_DIR, 'radar.json');
+const STATE_FILE = path.join(DATA_DIR, 'radar-state.json');
+const MIN_TURNOVER = Number(process.env.MIN_TURNOVER_USDT || 10_000_000);
+const BATCH_PER_EXCHANGE = Math.max(1, Number(process.env.RADAR_BATCH_PER_EXCHANGE || 8));
+const CONCURRENCY = Math.max(2, Number(process.env.SCAN_CONCURRENCY || 16));
+const TIMEOUT_MS = Math.max(3000, Number(process.env.SCAN_TIMEOUT_MS || 10000));
+const EVENT_TTL_MS = Math.max(60_000, Number(process.env.RADAR_EVENT_TTL_MS || 20 * 60_000));
 
-const ENDPOINTS = [
-  "https://fapi.binance.com/fapi/v1/ticker/24hr",
-  "https://fapi1.binance.com/fapi/v1/ticker/24hr",
-  "https://fapi2.binance.com/fapi/v1/ticker/24hr",
-  "https://fapi3.binance.com/fapi/v1/ticker/24hr",
-];
+const nowTR = () => new Intl.DateTimeFormat('tr-TR',{timeZone:'Europe/Istanbul',hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date());
+const num = v => Number(v || 0);
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
 
-const MIN_QUOTE_VOLUME = 10_000_000;
-const LIMIT = 10;
-
-function scoreCoin(change, volume) {
-  const momentum = Math.min(Math.abs(change) * 6, 55);
-  const liquidity = Math.min(
-    Math.max(Math.log10(Math.max(volume, 1)) - 6, 0) * 12,
-    45,
-  );
-
-  return Math.max(1, Math.min(100, Math.round(momentum + liquidity)));
+async function readJson(file,fallback){try{return JSON.parse(await readFile(file,'utf8'))}catch{return fallback}}
+async function fetchJson(url,retries=1){let last;for(let i=0;i<=retries;i++){const ctl=new AbortController();const timer=setTimeout(()=>ctl.abort(),TIMEOUT_MS);try{const r=await fetch(url,{headers:{'user-agent':'SihirbazAI-Radar/2.3.0'},signal:ctl.signal});if(!r.ok)throw new Error(`${r.status} ${r.statusText}`);return await r.json()}catch(e){last=e;if(i<retries)await sleep(250*(i+1))}finally{clearTimeout(timer)}}throw last}
+async function mapLimit(items,limit,fn){const out=new Array(items.length);let i=0;await Promise.all(Array.from({length:Math.min(limit,items.length)},async()=>{while(true){const n=i++;if(n>=items.length)break;try{out[n]=await fn(items[n])}catch(e){out[n]={events:[],error:String(e?.message||e)}}}}));return out}
+function ema(values,period){if(values.length<period)return 0;const k=2/(period+1);let v=values.slice(0,period).reduce((a,b)=>a+b,0)/period;for(const x of values.slice(period))v=x*k+v*(1-k);return v}
+function rsi(values,period=14){if(values.length<=period)return 50;let gains=0,losses=0;for(let i=values.length-period;i<values.length;i++){const d=values[i]-values[i-1];if(d>=0)gains+=d;else losses-=d}if(losses===0)return 100;const rs=(gains/period)/(losses/period);return 100-100/(1+rs)}
+function pct(c,bars=1){if(c.length<=bars)return 0;const a=c.at(-(bars+1))?.close||0,b=c.at(-1)?.close||0;return a?((b-a)/a)*100:0}
+function volRatio(c,n=20){if(c.length<3)return 1;const last=c.at(-1)?.volume||0;const arr=c.slice(-(n+1),-1).map(x=>x.volume);const avg=arr.reduce((a,b)=>a+b,0)/Math.max(arr.length,1);return avg?last/avg:1}
+function levels(c,n=20){const p=c.slice(-(n+1),-1);return{resistance:Math.max(...p.map(x=>x.high)),support:Math.min(...p.map(x=>x.low))}}
+function ev(symbol,exchange,timeframe,type,detail,direction='neutral',value=null,technical={}){const createdAt=Date.now();return{symbol,exchange,timeframe,type,detail,direction,value,time:nowTR(),createdAt,eventKey:`${symbol}|${exchange}|${timeframe}|${type}`,...technical}}
+function analyze(symbol,exchange,c1,c5,c15,c60){
+  const out=[];
+  for(const[tf,c,bars]of[['1m',c1,1],['5m',c1,5]]){const m=pct(c,bars);if(Math.abs(m)>=2)out.push(ev(symbol,exchange,tf,'% Hareket',`%${Math.abs(m).toFixed(2)} ${m>0?'yükseliş':'düşüş'}`,m>0?'up':'down',m,{eventPrice:c.at(-1)?.close}))}
+  for(const[tf,c]of[['1m',c1],['5m',c5],['15m',c15]]){const v=volRatio(c);if(v>=1.5)out.push(ev(symbol,exchange,tf,'Hacim Girişi',`Hacim ${v.toFixed(2)}x`,'neutral',v,{eventPrice:c.at(-1)?.close}))}
+  for(const[tf,c]of[['5m',c5],['15m',c15]]){if(c.length<25)continue;const l=levels(c),last=c.at(-1),prev=c.at(-2);if(!last||!prev)continue;const tech={support:l.support,resistance:l.resistance,eventPrice:last.close,eventCandleTime:last.time};if(last.close>l.resistance)out.push(ev(symbol,exchange,tf,'Direnç Kırılımı',`Direnç ${l.resistance.toPrecision(7)} üstü kapanış`,'up',last.close,tech));if(last.close<l.support)out.push(ev(symbol,exchange,tf,'Destek Kırılımı',`Destek ${l.support.toPrecision(7)} altı kapanış`,'down',last.close,tech));const tol=Math.max(last.close*.0025,Math.abs(last.high-last.low)*.35);if(prev.close>l.resistance&&Math.abs(last.low-l.resistance)<=tol&&last.close>=l.resistance)out.push(ev(symbol,exchange,tf,'Direnç Retest','Kırılan direnç üzerinde başarılı retest','up',last.close,tech));if(prev.close<l.support&&Math.abs(last.high-l.support)<=tol&&last.close<=l.support)out.push(ev(symbol,exchange,tf,'Destek Retest','Kırılan destek altında başarılı retest','down',last.close,tech));if(last.high>l.resistance&&last.close<l.resistance)out.push(ev(symbol,exchange,tf,'Sahte Kırılım','Direnç üstü fitil, seviye altında kapanış','down',last.close,tech));if(last.low<l.support&&last.close>l.support)out.push(ev(symbol,exchange,tf,'Sahte Kırılım','Destek altı fitil, seviye üstünde kapanış','up',last.close,tech))}
+  for(const[tf,c]of[['5m',c5],['15m',c15],['1h',c60]]){const close=c.map(x=>x.close);if(close.length>=202){const e50=ema(close,50),e200=ema(close,200),prior=close.slice(0,-1),p50=ema(prior,50),p200=ema(prior,200),price=close.at(-1),prev=close.at(-2),tol=price*.002;const tech={ema50:e50,ema200:e200,eventPrice:price,eventCandleTime:c.at(-1)?.time};if(p50<=p200&&e50>e200)out.push(ev(symbol,exchange,tf,'Golden Cross','EMA50, EMA200 üzerine kesti','up',price,tech));if(p50>=p200&&e50<e200)out.push(ev(symbol,exchange,tf,'Death Cross','EMA50, EMA200 altına kesti','down',price,tech));if(Math.abs(price-e50)<=tol||(prev<e50&&price>=e50)||(prev>e50&&price<=e50))out.push(ev(symbol,exchange,tf,'EMA50 Teması',`EMA50 ${e50.toPrecision(7)} teması/geçişi`,price>=e50?'up':'down',price,tech));if(Math.abs(price-e200)<=tol||(prev<e200&&price>=e200)||(prev>e200&&price<=e200))out.push(ev(symbol,exchange,tf,'EMA200 Teması',`EMA200 ${e200.toPrecision(7)} teması/geçişi`,price>=e200?'up':'down',price,tech))}const rv=rsi(close);if(rv>=70)out.push(ev(symbol,exchange,tf,'RSI Aşırı Alım',`RSI ${rv.toFixed(1)} — 70 üzeri`,'down',rv,{eventPrice:c.at(-1)?.close}));if(rv<=30)out.push(ev(symbol,exchange,tf,'RSI Aşırı Satım',`RSI ${rv.toFixed(1)} — 30 altı`,'up',rv,{eventPrice:c.at(-1)?.close}))}
+  return out
 }
+const normalize=rows=>rows.map(x=>({time:num(x[0]),open:num(x[1]),high:num(x[2]),low:num(x[3]),close:num(x[4]),volume:num(x[5])})).sort((a,b)=>a.time-b.time);
+const EXCHANGES={
+  Binance:{async symbols(){const a=await fetchJson('https://fapi.binance.com/fapi/v1/ticker/24hr');return a.filter(x=>x.symbol.endsWith('USDT')&&num(x.quoteVolume)>=MIN_TURNOVER).sort((a,b)=>num(b.quoteVolume)-num(a.quoteVolume)).map(x=>x.symbol)},async candles(s,tf,limit){const map={1:'1m',5:'5m',15:'15m',60:'1h'};return normalize(await fetchJson(`https://fapi.binance.com/fapi/v1/klines?symbol=${s}&interval=${map[tf]}&limit=${limit}`))}},
+  Bybit:{async symbols(){const j=await fetchJson('https://api.bybit.com/v5/market/tickers?category=linear');return j.result.list.filter(x=>x.symbol.endsWith('USDT')&&num(x.turnover24h)>=MIN_TURNOVER).sort((a,b)=>num(b.turnover24h)-num(a.turnover24h)).map(x=>x.symbol)},async candles(s,tf,limit){const j=await fetchJson(`https://api.bybit.com/v5/market/kline?category=linear&symbol=${s}&interval=${tf}&limit=${limit}`);return normalize(j.result.list.map(r=>[r[0],r[1],r[2],r[3],r[4],r[5]]))}},
+  MEXC:{async symbols(){const j=await fetchJson('https://contract.mexc.com/api/v1/contract/ticker');const a=j.data||[];return a.filter(x=>String(x.symbol).endsWith('_USDT')&&num(x.amount24)>=MIN_TURNOVER).sort((a,b)=>num(b.amount24)-num(a.amount24)).map(x=>x.symbol)},async candles(s,tf,limit){const map={1:'Min1',5:'Min5',15:'Min15',60:'Min60'},end=Math.floor(Date.now()/1000),start=end-(limit*tf*60);const j=await fetchJson(`https://contract.mexc.com/api/v1/contract/kline/${s}?interval=${map[tf]}&start=${start}&end=${end}`);const d=j.data||{};return(d.time||[]).map((t,i)=>({time:num(t)*1000,open:num(d.open?.[i]),high:num(d.high?.[i]),low:num(d.low?.[i]),close:num(d.close?.[i]),volume:num(d.vol?.[i]??d.amount?.[i])})).sort((a,b)=>a.time-b.time).slice(-limit)}}
+};
 
-async function fetchWithTimeout(url, timeoutMs = 12000) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    return await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        accept: "application/json",
-        "user-agent": "SihirbazAI-GitHubActions/0.1.2",
-      },
-    });
-  } finally {
-    clearTimeout(timeout);
-  }
+await mkdir(DATA_DIR,{recursive:true});
+const state=await readJson(STATE_FILE,{cursors:{},events:[]});
+const scanStarted=Date.now();
+const stats={};const scannedKeys=new Set();const freshEvents=[];let totalUniverse=0;
+for(const[name,api]of Object.entries(EXCHANGES)){
+  try{
+    const symbols=await api.symbols();totalUniverse+=symbols.length;const cursor=Math.max(0,Number(state.cursors?.[name]||0))%Math.max(symbols.length,1);const batch=[];for(let i=0;i<Math.min(BATCH_PER_EXCHANGE,symbols.length);i++)batch.push(symbols[(cursor+i)%symbols.length]);state.cursors[name]=(cursor+batch.length)%Math.max(symbols.length,1);stats[name]={universe:symbols.length,scanned:batch.length,cursor:state.cursors[name],ok:true};
+    const rows=await mapLimit(batch,CONCURRENCY,async native=>{const[c1,c5,c15,c60]=await Promise.all([api.candles(native,1,80),api.candles(native,5,220),api.candles(native,15,220),api.candles(native,60,220)]);const symbol=native.replace('_','');scannedKeys.add(`${symbol}|${name} Futures`);return{events:analyze(symbol,`${name} Futures`,c1,c5,c15,c60)}});freshEvents.push(...rows.flatMap(x=>x.events||[]));stats[name].errors=rows.filter(x=>x.error).length;
+  }catch(e){stats[name]={universe:0,scanned:0,ok:false,error:String(e?.message||e)}}
 }
-
-async function fetchTickers() {
-  const failures = [];
-
-  for (const endpoint of ENDPOINTS) {
-    try {
-      const response = await fetchWithTimeout(endpoint);
-
-      if (!response.ok) {
-        failures.push({
-          endpoint,
-          status: response.status,
-          message: `HTTP ${response.status}`,
-        });
-        continue;
-      }
-
-      const data = await response.json();
-
-      if (!Array.isArray(data) || data.length === 0) {
-        failures.push({
-          endpoint,
-          message: "Boş veya geçersiz yanıt",
-        });
-        continue;
-      }
-
-      return {
-        data,
-        source: new URL(endpoint).hostname,
-        failures,
-      };
-    } catch (error) {
-      failures.push({
-        endpoint,
-        message: error instanceof Error ? error.message : "Bağlantı hatası",
-      });
-    }
-  }
-
-  const details = failures
-    .map((item) => `${new URL(item.endpoint).hostname}: ${item.status ?? "-"} ${item.message}`)
-    .join(" | ");
-
-  throw new Error(`Tüm Binance Futures bağlantıları başarısız: ${details}`);
-}
-
-function normalizeTicker(item) {
-  const change = Number(item.priceChangePercent);
-  const volume = Number(item.quoteVolume);
-  const price = Number(item.lastPrice);
-
-  if (
-    !item.symbol ||
-    !Number.isFinite(change) ||
-    !Number.isFinite(volume) ||
-    !Number.isFinite(price)
-  ) {
-    return null;
-  }
-
-  return {
-    symbol: item.symbol,
-    price,
-    change,
-    volume,
-    score: scoreCoin(change, volume),
-  };
-}
-
-async function main() {
-  await mkdir(new URL("../public/data/", import.meta.url), { recursive: true });
-
-  try {
-    const { data, source, failures } = await fetchTickers();
-
-    const coins = data
-      .filter((item) => typeof item.symbol === "string" && item.symbol.endsWith("USDT"))
-      .filter((item) => !item.symbol.startsWith("1000"))
-      .map(normalizeTicker)
-      .filter(Boolean)
-      .filter((item) => item.volume >= MIN_QUOTE_VOLUME);
-
-    const long = coins
-      .filter((item) => item.change > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, LIMIT)
-      .map((item) => ({
-        symbol: item.symbol,
-        price: item.price.toLocaleString("en-US", { maximumFractionDigits: 8 }),
-        change: item.change,
-        score: item.score,
-      }));
-
-    const short = coins
-      .filter((item) => item.change < 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, LIMIT)
-      .map((item) => ({
-        symbol: item.symbol,
-        price: item.price.toLocaleString("en-US", { maximumFractionDigits: 8 }),
-        change: item.change,
-        score: item.score,
-      }));
-
-    const payload = {
-      ok: true,
-      version: "0.1.2",
-      sourceType: "github-actions",
-      exchange: "Binance Futures",
-      apiSource: source,
-      endpointFallbacks: failures.length,
-      coinCount: coins.length,
-      updatedAt: new Date().toISOString(),
-      updatedAtDisplay: new Date().toLocaleString("tr-TR", {
-        timeZone: "Europe/Istanbul",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-      }),
-      long,
-      short,
-      scoringNote: "Geçici skor: 24 saatlik fiyat değişimi ve hacim.",
-      failures,
-    };
-
-    await writeFile(OUTPUT_PATH, JSON.stringify(payload, null, 2), "utf8");
-    console.log(`Başarılı: ${coins.length} coin tarandı. Kaynak: ${source}`);
-  } catch (error) {
-    const payload = {
-      ok: false,
-      version: "0.1.2",
-      sourceType: "github-actions",
-      exchange: "Binance Futures",
-      coinCount: 0,
-      updatedAt: new Date().toISOString(),
-      updatedAtDisplay: new Date().toLocaleString("tr-TR", {
-        timeZone: "Europe/Istanbul",
-      }),
-      long: [],
-      short: [],
-      error: error instanceof Error ? error.message : "Bilinmeyen hata",
-    };
-
-    await writeFile(OUTPUT_PATH, JSON.stringify(payload, null, 2), "utf8");
-    console.error(payload.error);
-    process.exitCode = 1;
-  }
-}
-
-await main();
+const cutoff=Date.now()-EVENT_TTL_MS;const kept=(state.events||[]).filter(e=>Number(e.createdAt||0)>=cutoff&&!scannedKeys.has(`${e.symbol}|${e.exchange}`));const merged=new Map();for(const e of[...kept,...freshEvents])merged.set(e.eventKey,e);const priority={'% Hareket':9,'Direnç Kırılımı':8,'Destek Kırılımı':8,'Golden Cross':7,'Death Cross':7,'Hacim Girişi':6,'RSI Aşırı Alım':5,'RSI Aşırı Satım':5};const events=[...merged.values()].sort((a,b)=>(priority[b.type]||1)-(priority[a.type]||1)||Number(b.createdAt||0)-Number(a.createdAt||0));state.events=events.slice(0,1000);state.lastRunAt=Date.now();await writeFile(STATE_FILE,JSON.stringify(state,null,2),'utf8');
+const scanDurationMs=Date.now()-scanStarted;const scannedThisRound=Object.values(stats).reduce((n,x)=>n+(x.scanned||0),0);const payload={ok:true,version:'2.3.0',updatedAt:nowTR(),generatedAt:new Date().toISOString(),scanDurationMs,scannedThisRound,totalUniverse,activeEvents:state.events.length,exchanges:stats,settings:{minTurnover:MIN_TURNOVER,batchPerExchange:BATCH_PER_EXCHANGE,eventTtlMs:EVENT_TTL_MS},events:state.events};await writeFile(OUTPUT,JSON.stringify(payload,null,2),'utf8');console.log(`Radar turu tamamlandı: ${scannedThisRound}/${totalUniverse} coin, ${(scanDurationMs/1000).toFixed(1)} sn, ${state.events.length} aktif alarm`);console.table(stats);

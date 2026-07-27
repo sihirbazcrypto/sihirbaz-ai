@@ -26,6 +26,12 @@
     .coin-link{cursor:pointer;color:var(--cyan);text-decoration:underline;text-decoration-style:dotted}
     .modal-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:1000;padding:24px;overflow:auto}
     .modal-backdrop.open{display:block}
+    .modal-backdrop.chart-fullscreen{padding:0;background:#020711}
+    .modal-backdrop.chart-fullscreen .modal{width:100vw;max-width:none;min-height:100vh;border-radius:0;margin:0}
+    .modal-backdrop.chart-fullscreen #interactiveChart{height:calc(100vh - 150px)!important}
+    .modal-backdrop.chart-fullscreen .tradingview-frame{height:calc(100vh - 120px)!important}
+    .fullscreen-btn{margin-left:auto;border-color:#25d5ff;color:#25d5ff}
+    .tradingview-frame{width:100%;height:72vh;min-height:560px;border:0;border-radius:12px;background:#07111f}
     .modal{max-width:1180px;margin:0 auto;background:#0b1727;border:1px solid #2b405d;border-radius:18px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.45)}
     .modal-head{display:flex;justify-content:space-between;align-items:center;padding:18px 22px;border-bottom:1px solid var(--line)}
     .modal-title{font-size:22px;font-weight:800}.close-btn{background:transparent;border:0;color:#fff;font-size:26px;cursor:pointer}
@@ -67,11 +73,106 @@
     .breakout-down{color:var(--red);font-weight:700}
     .breakout-none{color:var(--orange)}
 
+
+    .auth-gate{position:fixed;inset:0;z-index:5000;background:radial-gradient(circle at top right,#153050,#06101d 55%);display:flex;align-items:center;justify-content:center;padding:20px}
+    .auth-gate.hidden{display:none}
+    .auth-shell{width:min(980px,100%);display:grid;grid-template-columns:1.15fr .85fr;background:#0b1727;border:1px solid #28405d;border-radius:22px;overflow:hidden;box-shadow:0 35px 100px rgba(0,0,0,.55)}
+    .auth-brand{padding:42px;background:linear-gradient(145deg,#0c2036,#102941);display:flex;flex-direction:column;justify-content:center}
+    .auth-brand h1{font-size:38px;margin:0 0 14px}.auth-brand h1 span{color:var(--cyan)}
+    .auth-brand p{color:#a9bad0;line-height:1.65;max-width:520px}
+    .auth-features{display:grid;gap:10px;margin-top:24px;color:#d8e5f4}
+    .auth-panel{padding:34px;background:#0b1727}
+    .auth-tabs{display:flex;gap:8px;margin-bottom:24px}
+    .auth-tab{flex:1}.auth-tab.active{border-color:var(--cyan);color:var(--cyan)}
+    .auth-form{display:grid;gap:13px}
+    .auth-form.hidden{display:none}
+    .auth-input{width:100%;background:#0e2034;color:#fff;border:1px solid #29405d;border-radius:10px;padding:13px}
+    .auth-submit{background:#1d78a5;border-color:#3198c7;font-weight:700}
+    .auth-message{min-height:24px;margin-top:12px;color:var(--orange);line-height:1.45}
+    .account-bar{display:flex;align-items:center;gap:10px}
+    .admin-drawer{display:none;position:fixed;z-index:4000;right:18px;top:84px;width:min(720px,calc(100vw - 36px));max-height:calc(100vh - 104px);overflow:auto;background:#0b1727;border:1px solid #2b435f;border-radius:16px;box-shadow:0 24px 70px rgba(0,0,0,.45)}
+    .admin-drawer.open{display:block}
+    .admin-head{display:flex;justify-content:space-between;align-items:center;padding:16px 18px;border-bottom:1px solid var(--line)}
+    .admin-users{padding:12px}
+    .admin-user{display:grid;grid-template-columns:1.4fr .8fr auto;gap:12px;align-items:center;padding:12px;border-bottom:1px solid #18293d}
+    .admin-actions{display:flex;gap:6px;flex-wrap:wrap}
+    @media(max-width:760px){.auth-shell{grid-template-columns:1fr}.auth-brand{display:none}.admin-user{grid-template-columns:1fr}}
+
+
+    .dashboard-grid{display:grid;grid-template-columns:minmax(0,1fr) 390px;gap:16px;align-items:start}
+    .dashboard-main{min-width:0}.radar-column{display:grid;gap:12px;min-width:0}.ranking-column{display:grid;gap:14px;position:sticky;top:12px;max-height:calc(100vh - 96px);overflow:auto;padding-right:4px}
+    .ranking-column .table-box{max-height:none}.ranking-column table{font-size:12px}.ranking-column th,.ranking-column td{padding:9px 7px}
+    .radar-dashboard{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.radar-dashboard .radar-wide{grid-column:1/-1}
+    .radar-health{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.live-pulse{width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 0 0 rgba(118,227,154,.6);animation:radarPulse 1.8s infinite}.live-pulse.stale{background:var(--orange);animation:none}.live-pulse.error{background:var(--red);animation:none}@keyframes radarPulse{0%{box-shadow:0 0 0 0 rgba(118,227,154,.55)}70%{box-shadow:0 0 0 9px rgba(118,227,154,0)}100%{box-shadow:0 0 0 0 rgba(118,227,154,0)}}
+    .radar-stats{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}.radar-stat{background:#081524;border:1px solid #223954;border-radius:8px;padding:4px 8px;font-size:11px;color:#aebfd4}
+    .radar-head{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#0b1a2a;border:1px solid #2a405b;border-radius:14px;padding:14px 16px}
+    .radar-head h2{font-size:18px;margin:0}.radar-live{color:var(--green);font-size:12px}.radar-refresh{padding:7px 10px}
+    .radar-box{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+    .radar-box-title{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--line);font-weight:800}
+    .radar-list{display:grid;max-height:230px;overflow:auto}.radar-item{display:grid;grid-template-columns:minmax(90px,.85fr) 1.3fr auto;gap:8px;padding:10px 12px;border-bottom:1px solid #18283b;cursor:pointer;align-items:center}
+    .radar-item:hover{background:#122238}.radar-symbol{color:var(--cyan);font-weight:800}.radar-detail{font-size:12px;color:#c2cede}.radar-meta{text-align:right;font-size:11px;color:var(--muted)}
+    .radar-up{color:var(--green)}.radar-down{color:var(--red)}.radar-neutral{color:var(--orange)}.radar-empty{padding:15px;color:var(--muted);font-size:12px}
+    .rsi-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:10px}.rsi-col{background:#0a1727;border:1px solid #1d3048;border-radius:10px;overflow:hidden}.rsi-col h4{margin:0;padding:9px;text-align:center;border-bottom:1px solid #1d3048;font-size:12px}.rsi-row{display:flex;justify-content:space-between;gap:6px;padding:7px 8px;font-size:11px;border-bottom:1px solid #15263a}.rsi-row:last-child{border-bottom:0}
+    .radar-filter{display:flex;gap:6px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--line)}.radar-filter button{padding:6px 9px;font-size:11px}.radar-filter button.active{border-color:var(--cyan);color:var(--cyan)}
+    @media(max-width:1250px){.dashboard-grid{grid-template-columns:1fr}.ranking-column{position:static;max-height:none}.radar-list{max-height:260px}}
+    @media(max-width:900px){.radar-dashboard{grid-template-columns:1fr}.radar-dashboard .radar-wide{grid-column:auto}}
+    @media(max-width:700px){.radar-item{grid-template-columns:1fr}.radar-meta{text-align:left}.rsi-grid{grid-template-columns:1fr}}
+
   </style>
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
-<header class="topbar"><div class="brand">SİHİRBAZ <span>AI</span></div><div class="status" id="systemStatus">● Veri bekleniyor</div></header>
+
+<div class="auth-gate" id="authGate">
+  <div class="auth-shell">
+    <section class="auth-brand">
+      <h1>SİHİRBAZ <span>AI</span></h1>
+      <p>Canlı piyasa radarı, kırılım takibi ve bağımsız trader AI analizlerine yalnızca yönetici tarafından onaylanan üyeler erişebilir.</p>
+      <div class="auth-features">
+        <div>✓ Yönetici onaylı özel erişim</div>
+        <div>✓ Binance, Bybit, MEXC ve OKX radarları</div>
+        <div>✓ Etkileşimli 5m / 15m grafikler</div>
+        <div>✓ Bağımsız AI piyasa kararı</div>
+      </div>
+    </section>
+    <section class="auth-panel">
+      <div class="auth-tabs">
+        <button id="loginTab" class="auth-tab active" onclick="showAuthForm('login')">Üye Girişi</button>
+        <button id="registerTab" class="auth-tab" onclick="showAuthForm('register')">Üyelik Başvurusu</button>
+      </div>
+      <form id="loginForm" class="auth-form" onsubmit="submitLogin(event)">
+        <input class="auth-input" id="loginEmail" type="email" placeholder="E-posta" required>
+        <input class="auth-input" id="loginPassword" type="password" placeholder="Şifre" required>
+        <button class="auth-submit" type="submit">Giriş Yap</button>
+      </form>
+      <form id="registerForm" class="auth-form hidden" onsubmit="submitRegister(event)">
+        <input class="auth-input" id="registerName" type="text" placeholder="Adınız" minlength="2" required>
+        <input class="auth-input" id="registerEmail" type="email" placeholder="E-posta" required>
+        <input class="auth-input" id="registerPassword" type="password" placeholder="Şifre — en az 10 karakter" minlength="10" required>
+        <button class="auth-submit" type="submit">Onay İçin Başvur</button>
+      </form>
+      <div id="authMessage" class="auth-message"></div>
+    </section>
+  </div>
+</div>
+
+<aside id="adminDrawer" class="admin-drawer">
+  <div class="admin-head">
+    <b>Üye Yönetimi</b>
+    <button onclick="toggleAdminPanel()">×</button>
+  </div>
+  <div id="adminUsers" class="admin-users">Üyeler yükleniyor...</div>
+</aside>
+
+<header class="topbar">
+  <div class="brand">SİHİRBAZ <span>AI</span></div>
+  <div class="account-bar">
+    <div class="status" id="systemStatus">● Veri bekleniyor</div>
+    <span id="accountName" class="subvalue"></span>
+    <button id="adminButton" style="display:none" onclick="toggleAdminPanel()">Üye Yönetimi</button>
+    <button id="logoutButton" style="display:none" onclick="logoutUser()">Çıkış</button>
+  </div>
+</header>
 <div class="layout">
   <aside class="sidebar">
     <div class="menu-item active">Dashboard</div><div class="menu-item">Long Tarama</div><div class="menu-item">Short Tarama</div>
@@ -84,17 +185,30 @@
       <option value="binance">Binance Futures</option>
       <option value="mexc">MEXC Futures</option>
       <option value="okx">OKX Perpetual</option>
-    </select><select><option>Sihirbaz Terminal v1.1</option></select><button onclick="loadDashboard()">Yenile</button></div>
+    </select><select><option>Sihirbaz Terminal v2.0</option></select><button onclick="loadDashboard()">Yenile</button></div>
     <section class="cards">
       <div class="card"><div class="label">Likiditesi Uygun Coin</div><div class="value" id="marketCount">-</div></div>
       <div class="card"><div class="label">Teknik Analiz Edilen</div><div class="value" id="analysedCount">-</div></div>
       <div class="card"><div class="label">Hazır Long / Short</div><div class="value" id="readyCount">-</div></div>
       <div class="card"><div class="label">Son Güncelleme</div><div class="value" id="updatedAt">-</div><div class="subvalue" id="sourceLabel">Kaynak seçiliyor</div></div>
     </section>
-    <section class="tables">
-      <div class="table-box"><div class="table-title positive">Long Sıralaması</div><div id="longTable" class="loading">Veriler yükleniyor...</div></div>
-      <div class="table-box"><div class="table-title negative">Short Sıralaması</div><div id="shortTable" class="loading">Veriler yükleniyor...</div></div>
-    </section>
+    <div class="dashboard-grid">
+      <section class="radar-column">
+        <div class="radar-head"><div><h2>CANLI PİYASA RADARI</h2><div class="radar-health"><span class="live-pulse" id="radarPulse"></span><div class="radar-live" id="radarStatus">Veri hazırlanıyor...</div></div><div class="radar-stats"><span class="radar-stat" id="radarScanAge">Son veri: -</span><span class="radar-stat" id="radarNextScan">Yeni tarama: -</span><span class="radar-stat" id="radarEventCount">0 olay</span></div></div><button class="radar-refresh" onclick="loadMarketRadar(true)">Şimdi Kontrol Et</button></div>
+        <div class="radar-filter"><button class="active" data-radar-filter="all" onclick="setRadarFilter('all',this)">Tümü</button><button data-radar-filter="1m" onclick="setRadarFilter('1m',this)">1 dk</button><button data-radar-filter="5m" onclick="setRadarFilter('5m',this)">5 dk</button><button data-radar-filter="15m" onclick="setRadarFilter('15m',this)">15 dk</button><button data-radar-filter="1h" onclick="setRadarFilter('1h',this)">1 saat</button></div>
+        <div class="radar-dashboard">
+          <div class="radar-box"><div class="radar-box-title"><span>% HAREKET</span><small>1m / 5m • %2+</small></div><div class="radar-list" id="radarMovement"><div class="radar-empty">Bekleniyor...</div></div></div>
+          <div class="radar-box"><div class="radar-box-title"><span>DESTEK / DİRENÇ</span><small>Kırılım • Retest • Fake</small></div><div class="radar-list" id="radarBreakout"><div class="radar-empty">Bekleniyor...</div></div></div>
+          <div class="radar-box"><div class="radar-box-title"><span>HACİM GİRİŞİ</span><small>1.5x • 2x • 3x+</small></div><div class="radar-list" id="radarVolume"><div class="radar-empty">Bekleniyor...</div></div></div>
+          <div class="radar-box"><div class="radar-box-title"><span>EMA 50 / 200</span><small>Temas • Golden • Death</small></div><div class="radar-list" id="radarEma"><div class="radar-empty">Bekleniyor...</div></div></div>
+          <div class="radar-box radar-wide"><div class="radar-box-title"><span>RSI AŞIRI ALIM / SATIM</span><small>5m • 15m • 1 saat</small></div><div class="rsi-grid" id="radarRsi"><div class="radar-empty">Bekleniyor...</div></div></div>
+        </div>
+      </section>
+      <aside class="ranking-column">
+        <div class="table-box"><div class="table-title positive">Long Sıralaması</div><div id="longTable" class="loading">Veriler yükleniyor...</div></div>
+        <div class="table-box"><div class="table-title negative">Short Sıralaması</div><div id="shortTable" class="loading">Veriler yükleniyor...</div></div>
+      </aside>
+    </div>
   </main>
 </div>
 <script>
@@ -103,6 +217,7 @@ function sideLabel(side){return side==='above'?'<span class="positive">Üstü</s
 function stochLabel(s){const cls=s.zone==='oversold'?'positive':s.zone==='overbought'?'negative':'warning';return `<span class="${cls}">${s.k.toFixed(0)}/${s.d.toFixed(0)} ${s.cross==='bullish'?'↑':s.cross==='bearish'?'↓':''}</span>`}
 function bbLabel(state){const map={lower_reentry:'Alt→İçeri',lower_touch:'Alt temas',middle:'Orta',upper_touch:'Üst temas',upper_reentry:'Üst→İçeri'};const cls=state.startsWith('lower')?'positive':state.startsWith('upper')?'negative':'warning';return `<span class="${cls}">${map[state]}</span>`}
 function renderTable(items,direction){
+  const tableExchange=(document.getElementById('exchangeSelect')?.value||'bybit');
   const scoreKey=direction==='long'?'longScore':'shortScore';
   const readyKey=direction==='long'?'longReady':'shortReady';
   const reasonsKey=direction==='long'?'reasonsLong':'reasonsShort';
@@ -111,7 +226,7 @@ function renderTable(items,direction){
   return `<table><thead><tr><th>Durum</th><th>Coin</th><th>24s%</th><th>Stoch5</th><th>Stoch15</th><th>RSI5</th><th>EMA50-5</th><th>EMA50-15</th><th>EMA200-15</th><th>BB5</th><th>Hacim</th><th>Funding</th><th>OI</th><th>Skor</th><th>Neden / Uyarı</th></tr></thead><tbody>${
     items.map(item=>`<tr>
       <td>${item[readyKey]?'<span class="ready">HAZIR</span>':'<span class="wait">İZLE</span>'}</td>
-      <td><b class="coin-link" onclick="openCoinDetail(\'${item.symbol}\')">${item.symbol}</b></td>
+      <td><b class="coin-link" onclick="openCoinDetail(\'${item.symbol}\',\'${tableExchange}\')">${item.symbol}</b></td>
       <td class="${item.change>=0?'positive':'negative'}">${item.change.toFixed(2)}%</td>
       <td>${stochLabel(item.stoch5)}</td><td>${stochLabel(item.stoch15)}</td>
       <td>${item.rsi5.toFixed(1)}</td>
@@ -136,7 +251,7 @@ async function binanceFetch(path){
   const failures=[];
   for(const base of BINANCE_BASES){
     try{
-      const response=await fetch(base+path,{cache:'no-store'});
+      const response=await fetch(base+path,{cache:'no-store',credentials:'same-origin'});
       if(!response.ok){failures.push(`${base}: HTTP ${response.status}`);continue}
       const text=await response.text();
       if(!text.trim()){failures.push(`${base}: boş yanıt`);continue}
@@ -229,7 +344,7 @@ async function publicFetchJson(bases,path){
   const failures=[];
   for(const base of bases){
     try{
-      const response=await fetch(base+path,{cache:'no-store',headers:{accept:'application/json'}});
+      const response=await fetch(base+path,{cache:'no-store',credentials:'same-origin',headers:{accept:'application/json'}});
       if(!response.ok){failures.push(`${base}: HTTP ${response.status}`);continue}
       const text=await response.text();
       if(!text.trim()){failures.push(`${base}: boş yanıt`);continue}
@@ -552,7 +667,7 @@ async function loadDashboard(){
     else if(selected==='mexc')data=await loadMexcDashboard();
     else if(selected==='okx')data=await loadOkxDashboard();
     else{
-      const response=await fetch(`/api/dashboard?t=${Date.now()}`,{cache:'no-store'});
+      const response=await fetch(`/api/dashboard?t=${Date.now()}`,{cache:'no-store',credentials:'same-origin'});
       data=await response.json();
       if(!response.ok||!data.ok)throw new Error(data.error||'Veri alınamadı');
     }
@@ -904,7 +1019,7 @@ async function openBinanceCoinDetail(symbol){
 
 function closeCoinModal(event){
   if(event&&event.target!==event.currentTarget)return;
-  document.getElementById('coinModal').classList.remove('open');
+  const cm=document.getElementById('coinModal');cm.classList.remove('open','chart-fullscreen');if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});
 }
 
 async function openCoinDetail(symbol){
@@ -919,7 +1034,7 @@ async function openCoinDetail(symbol){
   modal.classList.add('open');
 
   try{
-    const response=await fetch(`/api/coin?symbol=${encodeURIComponent(symbol)}&t=${Date.now()}`,{cache:'no-store'});
+    const response=await fetch(`/api/coin?symbol=${encodeURIComponent(symbol)}&t=${Date.now()}`,{cache:'no-store',credentials:'same-origin'});
     const data=await response.json();
     if(!response.ok||!data.ok)throw new Error(data.error||'Coin analizi alınamadı');
 
@@ -995,7 +1110,7 @@ async function openCoinDetail(symbol){
         </div>
       </div>`;
     requestAnimationFrame(()=>drawTechnicalChart(data));
-    fetch(`/api/ai-comment?symbol=${encodeURIComponent(symbol)}&t=${Date.now()}`,{cache:'no-store'})
+    fetch(`/api/ai-comment?symbol=${encodeURIComponent(symbol)}&t=${Date.now()}`,{cache:'no-store',credentials:'same-origin'})
       .then(r=>r.json().then(body=>({ok:r.ok,body})))
       .then(({ok,body})=>{
         const box=document.getElementById('aiComment');
@@ -1157,6 +1272,7 @@ function renderProDetail(data,exchangeName){
             <button class="tf-btn active" id="tf5">5 Dakika</button>
             <button class="tf-btn" id="tf15">15 Dakika</button>
             <span class="subvalue">Grafiği sürükleyebilir, fare tekeriyle yakınlaştırabilirsiniz.</span>
+            <button class="fullscreen-btn" onclick="toggleCoinModalFullscreen()">⛶ Tam Ekran</button>
           </div>
           <div id="interactiveChart" class="interactive-chart"></div>
         </div>
@@ -1219,6 +1335,7 @@ function renderProDetail(data,exchangeName){
 
   fetch('/api/ai-packet',{
     method:'POST',
+    credentials:'same-origin',
     headers:{'content-type':'application/json'},
     body:JSON.stringify({symbol:data.symbol,exchange:exchangeName,marketPacket})
   })
@@ -1235,8 +1352,8 @@ function renderProDetail(data,exchangeName){
   });
 }
 
-async function openCoinDetail(symbol){
-  const selected=document.getElementById('exchangeSelect').value;
+async function openCoinDetail(symbol,requestedExchange){
+  const selected=requestedExchange||document.getElementById('exchangeSelect')?.value||'bybit';
   const modal=document.getElementById('coinModal');
   const content=document.getElementById('modalContent');
   document.getElementById('modalTitle').textContent=symbol+' Profesyonel Analiz';
@@ -1245,7 +1362,7 @@ async function openCoinDetail(symbol){
 
   try{
     if(selected==='bybit'){
-      const response=await fetch(`/api/coin?symbol=${encodeURIComponent(symbol)}&t=${Date.now()}`,{cache:'no-store'});
+      const response=await fetch(`/api/coin?symbol=${encodeURIComponent(symbol)}&t=${Date.now()}`,{cache:'no-store',credentials:'same-origin'});
       const data=await response.json();
       if(!response.ok||!data.ok)throw new Error(data.error||'Bybit detay verisi alınamadı');
       renderProDetail(data,'Bybit Futures');
@@ -1264,7 +1381,289 @@ async function openCoinDetail(symbol){
   }
 }
 
-loadDashboard();
+
+
+function tradingViewSymbol(symbol,exchange){
+  const clean=String(symbol||'').replace('_','').toUpperCase();
+  const ex=String(exchange||'').toLowerCase();
+  if(ex.includes('binance'))return `BINANCE:${clean}.P`;
+  if(ex.includes('mexc'))return `MEXC:${clean}.P`;
+  return `BYBIT:${clean}.P`;
+}
+function toggleCoinModalFullscreen(){
+  const modal=document.getElementById('coinModal');
+  if(!modal)return;
+  if(document.fullscreenElement){
+    document.exitFullscreen().catch(()=>{});
+    modal.classList.remove('chart-fullscreen');
+    return;
+  }
+  if(modal.requestFullscreen){
+    modal.requestFullscreen().then(()=>modal.classList.add('chart-fullscreen')).catch(()=>modal.classList.toggle('chart-fullscreen'));
+  }else modal.classList.toggle('chart-fullscreen');
+}
+document.addEventListener('fullscreenchange',()=>{
+  const modal=document.getElementById('coinModal');
+  if(modal&&!document.fullscreenElement)modal.classList.remove('chart-fullscreen');
+});
+async function fetchRadarCandles(symbol,exchange,timeframe){
+  const tf=String(timeframe||'5m');
+  if(String(exchange).includes('Binance')){
+    const rows=await binanceFetch(`/fapi/v1/klines?symbol=${encodeURIComponent(symbol)}&interval=${tf==='15m'?'15m':tf==='1h'?'1h':'5m'}&limit=240`);
+    return bParseKlines(rows);
+  }
+  if(String(exchange).includes('MEXC')){
+    const native=symbol.replace(/USDT$/,'_USDT');
+    const minutes=tf==='15m'?15:tf==='1h'?60:5;
+    const interval=tf==='15m'?'Min15':tf==='1h'?'Min60':'Min5';
+    const end=Math.floor(Date.now()/1000),start=end-240*minutes*60;
+    const body=await mexcFetch(`/api/v1/contract/kline/${native}?interval=${interval}&start=${start}&end=${end}`);
+    return mexcKlines(body.data);
+  }
+  const response=await fetch(`/api/coin?symbol=${encodeURIComponent(symbol)}&t=${Date.now()}`,{cache:'no-store',credentials:'same-origin'});
+  const body=await response.json();
+  if(!response.ok||!body.ok)throw new Error(body.error||'Bybit mum verisi alınamadı');
+  return tf==='15m'||tf==='1h'?(body.candles15||[]):(body.candles5||[]);
+}
+function createRadarEventChart(container,candles,event,timeframe){
+  if(activeInteractiveChart){try{activeInteractiveChart.remove()}catch{}activeInteractiveChart=null}
+  container.innerHTML='';
+  const chart=LightweightCharts.createChart(container,{width:container.clientWidth,height:600,layout:{background:{type:'solid',color:'#07111f'},textColor:'#9db0c8'},grid:{vertLines:{color:'#12243a'},horzLines:{color:'#12243a'}},rightPriceScale:{borderColor:'#263852'},timeScale:{borderColor:'#263852',timeVisible:true,secondsVisible:false,rightOffset:8,barSpacing:8},crosshair:{mode:LightweightCharts.CrosshairMode.Normal},handleScroll:{mouseWheel:true,pressedMouseMove:true,horzTouchDrag:true},handleScale:{axisPressedMouseMove:true,mouseWheel:true,pinch:true}});
+  activeInteractiveChart=chart;
+  const candleSeries=chart.addSeries(LightweightCharts.CandlestickSeries,{upColor:'#55d68b',downColor:'#ff6978',borderVisible:false,wickUpColor:'#55d68b',wickDownColor:'#ff6978'});
+  candleSeries.setData(candles.map(c=>({time:Math.floor((c.ts??c.time)/1000),open:+c.open,high:+c.high,low:+c.low,close:+c.close})));
+  const closes=candles.map(c=>+c.close),ema50=bEmaSeries(closes,50),ema200=bEmaSeries(closes,200);
+  const addLine=(values,color,width=2)=>{const line=chart.addSeries(LightweightCharts.LineSeries,{color,lineWidth:width,priceLineVisible:false,lastValueVisible:false});line.setData(values.map((v,i)=>Number.isFinite(v)?{time:Math.floor((candles[i].ts??candles[i].time)/1000),value:v}:null).filter(Boolean));return line};
+  addLine(ema50,'#f1c75b',2);addLine(ema200,'#a68cff',2);
+  const line=(price,color,title,width=2)=>{if(Number.isFinite(+price)&&+price>0)candleSeries.createPriceLine({price:+price,color,lineWidth:width,lineStyle:2,axisLabelVisible:true,title})};
+  line(event.support,'#55d68b','Destek');line(event.resistance,'#ffb85c','Direnç');line(event.ema50,'#f1c75b','EMA50 Alarm');line(event.ema200,'#a68cff','EMA200 Alarm');line(event.eventPrice,event.direction==='down'?'#ff6978':'#62e6ff',event.type,1);
+  chart.timeScale().fitContent();const ro=new ResizeObserver(()=>chart.applyOptions({width:container.clientWidth}));ro.observe(container);
+}
+async function openRadarCoinByKey(eventKey){
+  const event=radarEvents.find(x=>x.eventKey===eventKey);if(!event)return;
+  const modal=document.getElementById('coinModal'),content=document.getElementById('modalContent');
+  document.getElementById('modalTitle').textContent=`${event.symbol} • ${event.exchange} • ${event.type}`;modal.classList.add('open');content.className='';
+  content.innerHTML=`<div class="detail-card"><div class="chart-toolbar"><button class="tf-btn active" id="radarTf5">5 Dakika</button><button class="tf-btn" id="radarTf15">15 Dakika</button><span class="subvalue" id="radarChartInfo">Gerçek mum verisi yükleniyor...</span><button class="fullscreen-btn" onclick="toggleCoinModalFullscreen()">⛶ Tam Ekran</button></div><div id="radarTechnicalSummary" class="radar-stats" style="padding:8px 0"></div><div id="radarTechnicalChart" class="interactive-chart"><div class="loading">Grafik hazırlanıyor...</div></div></div>`;
+  const summary=document.getElementById('radarTechnicalSummary');summary.innerHTML=[event.support?`Destek: ${formatPrice(event.support)}`:'',event.resistance?`Direnç: ${formatPrice(event.resistance)}`:'',event.ema50?`EMA50: ${formatPrice(event.ema50)}`:'',event.ema200?`EMA200: ${formatPrice(event.ema200)}`:'',event.eventPrice?`Olay fiyatı: ${formatPrice(event.eventPrice)}`:'',`Olay: ${event.time}`].filter(Boolean).map(x=>`<span class="radar-stat">${x}</span>`).join('');
+  const chartNode=document.getElementById('radarTechnicalChart'),info=document.getElementById('radarChartInfo'),b5=document.getElementById('radarTf5'),b15=document.getElementById('radarTf15');
+  const load=async tf=>{try{info.textContent=`${event.exchange} • ${tf} gerçek mum verisi`;chartNode.innerHTML='<div class="loading">Mumlar yükleniyor...</div>';const candles=await fetchRadarCandles(event.symbol,event.exchange,tf);if(!candles.length)throw new Error('Mum verisi boş');createRadarEventChart(chartNode,candles,event,tf)}catch(error){chartNode.innerHTML=`<div class="error">Grafik alınamadı: ${error.message}</div>`}};
+  b5.onclick=()=>{b5.classList.add('active');b15.classList.remove('active');load('5m')};b15.onclick=()=>{b15.classList.add('active');b5.classList.remove('active');load('15m')};
+  await load(event.timeframe==='15m'?'15m':'5m');if(event.timeframe==='15m'){b15.classList.add('active');b5.classList.remove('active')}
+}
+
+let radarEvents=[];
+let radarFilter='all';
+let radarLastUpdatedAt='';
+let radarLastSeenMs=0;
+const RADAR_SCAN_INTERVAL_MS=30000;
+const RADAR_UI_POLL_MS=3000;
+const radarCooldown=new Map();
+const RADAR_COOLDOWN_MS=5*60*1000;
+
+function setRadarFilter(filter,button){
+  radarFilter=filter;
+  document.querySelectorAll('[data-radar-filter]').forEach(x=>x.classList.remove('active'));
+  if(button)button.classList.add('active');
+  renderRadar();
+}
+function radarItemHtml(event){
+  const cls=event.direction==='up'?'radar-up':event.direction==='down'?'radar-down':'radar-neutral';
+  return `<div class="radar-item" onclick="openRadarCoinByKey('${event.eventKey.replace(/'/g,"\\'")}')"><div><div class="radar-symbol">${event.symbol}</div><div class="subvalue">${event.exchange}</div></div><div><div class="${cls}">${event.type}</div><div class="radar-detail">${event.detail}</div></div><div class="radar-meta"><b>${event.timeframe}</b><br>${event.time}</div></div>`;
+}
+function filteredRadar(typeTest){return radarEvents.filter(e=>(radarFilter==='all'||e.timeframe===radarFilter)&&typeTest(e));}
+function fillRadar(id,items){document.getElementById(id).innerHTML=items.length?items.slice(0,20).map(radarItemHtml).join(''):'<div class="radar-empty">Bu kategoride güncel alarm yok.</div>';}
+function renderRadar(){
+  fillRadar('radarMovement',filteredRadar(e=>e.type==='% Hareket'));
+  fillRadar('radarBreakout',filteredRadar(e=>/Kırılım|Retest|Sahte/.test(e.type)));
+  fillRadar('radarVolume',filteredRadar(e=>e.type==='Hacim Girişi'));
+  fillRadar('radarEma',filteredRadar(e=>/EMA|Golden|Death/.test(e.type)));
+  const rsi=radarEvents.filter(e=>e.type.startsWith('RSI'));
+  radarRsi.innerHTML=['5m','15m','1h'].map(tf=>{const rows=rsi.filter(e=>e.timeframe===tf).slice(0,8);return `<div class="rsi-col"><h4>${tf==='1h'?'1 SAAT':tf.toUpperCase()}</h4>${rows.length?rows.map(e=>`<div class="rsi-row" onclick="openRadarCoinByKey('${e.eventKey.replace(/'/g,"\\'")}')"><span>${e.symbol}</span><b class="${e.direction==='up'?'positive':'negative'}">${Number(e.value).toFixed(1)}</b></div>`).join(''):'<div class="radar-empty">Sinyal yok</div>'}</div>`}).join('');
+}
+async function loadMarketRadar(force=false){
+  try{
+    radarStatus.textContent='Radar taranıyor...';
+    let response=await fetch(`/data/radar.json?t=${Date.now()}`,{cache:'no-store',credentials:'same-origin'});
+    let data=await response.json().catch(()=>null);
+    if(!response.ok||!data?.ok){
+      response=await fetch(`/api/radar?t=${Date.now()}`,{cache:'no-store',credentials:'same-origin'});
+      data=await response.json();
+    }
+    if(!response.ok||!data.ok)throw new Error(data.error||'Radar alınamadı');
+    const now=Date.now();
+    const accepted=[];
+    for(const event of data.events||[]){
+      const last=radarCooldown.get(event.eventKey)||0;
+      if(force||now-last>=RADAR_COOLDOWN_MS){radarCooldown.set(event.eventKey,now);accepted.push(event)}
+    }
+    const changed=String(data.updatedAt||'')!==radarLastUpdatedAt;
+    if(changed||force){
+      radarLastUpdatedAt=String(data.updatedAt||'');
+      radarLastSeenMs=Date.now();
+      radarEvents=(data.events||[]).slice(0,240);
+      renderRadar();
+    }
+    const count=radarEvents.length;
+    radarStatus.textContent=`AKTİF • Bu tur ${data.scannedThisRound??'-'} / Havuz ${data.totalUniverse??'-'} coin • ${data.updatedAt||'-'}`;
+    const countNode=document.getElementById('radarEventCount');if(countNode)countNode.textContent=`${count} aktif olay • ${((data.scanDurationMs||0)/1000).toFixed(1)} sn`; 
+    updateRadarClock();
+  }catch(error){
+    radarStatus.textContent=`Radar bağlantı hatası: ${error.message}`;
+    const pulse=document.getElementById('radarPulse');if(pulse)pulse.className='live-pulse error';
+  }
+}
+function updateRadarClock(){
+  const age=radarLastSeenMs?Math.floor((Date.now()-radarLastSeenMs)/1000):0;
+  const next=Math.max(0,30-(age%30));
+  const ageNode=document.getElementById('radarScanAge');if(ageNode)ageNode.textContent=`Son veri: ${age}s önce`;
+  const nextNode=document.getElementById('radarNextScan');if(nextNode)nextNode.textContent=`Yeni tarama: ~${next}s`;
+  const pulse=document.getElementById('radarPulse');if(pulse)pulse.className=age>75?'live-pulse stale':'live-pulse';
+}
+
+let currentUser=null;
+
+function showAuthForm(type){
+  const login=type==='login';
+  loginForm.classList.toggle('hidden',!login);
+  registerForm.classList.toggle('hidden',login);
+  loginTab.classList.toggle('active',login);
+  registerTab.classList.toggle('active',!login);
+  authMessage.textContent='';
+}
+
+async function authRequest(path,options={}){
+  const response=await fetch(path,{
+    credentials:'same-origin',
+    ...options,
+    headers:{'content-type':'application/json',...(options.headers||{})}
+  });
+  const body=await response.json().catch(()=>({ok:false,error:'Geçersiz sunucu yanıtı'}));
+  if(!response.ok)throw new Error(body.error||`HTTP ${response.status}`);
+  return body;
+}
+
+async function submitLogin(event){
+  event.preventDefault();
+  authMessage.textContent='Giriş kontrol ediliyor...';
+  try{
+    const result=await authRequest('/api/auth/login',{
+      method:'POST',
+      body:JSON.stringify({
+        email:loginEmail.value,
+        password:loginPassword.value
+      })
+    });
+    currentUser=result.user;
+    enterPanel();
+  }catch(error){
+    authMessage.textContent=error.message;
+  }
+}
+
+async function submitRegister(event){
+  event.preventDefault();
+  authMessage.textContent='Başvuru gönderiliyor...';
+  try{
+    const result=await authRequest('/api/auth/register',{
+      method:'POST',
+      body:JSON.stringify({
+        displayName:registerName.value,
+        email:registerEmail.value,
+        password:registerPassword.value
+      })
+    });
+    authMessage.textContent=result.message;
+    registerForm.reset();
+  }catch(error){
+    authMessage.textContent=error.message;
+  }
+}
+
+function enterPanel(){
+  authGate.classList.add('hidden');
+  accountName.textContent=currentUser?.display_name||'';
+  logoutButton.style.display='inline-block';
+  adminButton.style.display=currentUser?.role==='admin'?'inline-block':'none';
+  loadDashboard();
+  loadMarketRadar(true);
+  if(!window.__radarTimer)window.__radarTimer=setInterval(()=>loadMarketRadar(false),RADAR_UI_POLL_MS);
+  if(!window.__radarClock)window.__radarClock=setInterval(updateRadarClock,1000);
+}
+
+async function initAuth(){
+  try{
+    const result=await authRequest('/api/auth/me',{method:'GET'});
+    if(result.authenticated&&result.user){
+      currentUser=result.user;
+      enterPanel();
+    }else{
+      authGate.classList.remove('hidden');
+    }
+  }catch{
+    authGate.classList.remove('hidden');
+  }
+}
+
+async function logoutUser(){
+  try{await authRequest('/api/auth/logout',{method:'POST',body:'{}'})}catch{}
+  currentUser=null;
+  adminDrawer.classList.remove('open');
+  authGate.classList.remove('hidden');
+  logoutButton.style.display='none';
+  adminButton.style.display='none';
+  accountName.textContent='';
+}
+
+function toggleAdminPanel(){
+  adminDrawer.classList.toggle('open');
+  if(adminDrawer.classList.contains('open'))loadAdminUsers();
+}
+
+function statusText(status){
+  const map={pending:'Onay bekliyor',approved:'Onaylı',rejected:'Reddedildi',suspended:'Askıda'};
+  return map[status]||status;
+}
+
+async function loadAdminUsers(){
+  adminUsers.textContent='Üyeler yükleniyor...';
+  try{
+    const result=await authRequest('/api/admin/users',{method:'GET'});
+    adminUsers.innerHTML=result.users.map(user=>`
+      <div class="admin-user">
+        <div>
+          <b>${user.display_name}</b>
+          <div class="subvalue">${user.email}</div>
+          <div class="subvalue">Kayıt: ${user.created_at||'-'} • Son giriş: ${user.last_login_at||'-'}</div>
+        </div>
+        <div>
+          <div>${statusText(user.status)}</div>
+          <div class="subvalue">${user.role==='admin'?'Yönetici':'Üye'}</div>
+        </div>
+        <div class="admin-actions">
+          ${user.status!=='approved'?`<button onclick="updateMember(${user.id},{status:'approved'})">Onayla</button>`:''}
+          ${user.status==='approved'&&user.id!==currentUser.id?`<button onclick="updateMember(${user.id},{status:'suspended'})">Askıya Al</button>`:''}
+          ${user.status==='pending'?`<button onclick="updateMember(${user.id},{status:'rejected'})">Reddet</button>`:''}
+          ${user.id!==currentUser.id?`<button onclick="updateMember(${user.id},{role:'${user.role==='admin'?'member':'admin'}'})">${user.role==='admin'?'Üye Yap':'Admin Yap'}</button>`:''}
+        </div>
+      </div>`).join('');
+  }catch(error){
+    adminUsers.innerHTML=`<div class="error">${error.message}</div>`;
+  }
+}
+
+async function updateMember(id,patch){
+  try{
+    await authRequest(`/api/admin/users/${id}`,{
+      method:'PATCH',
+      body:JSON.stringify(patch)
+    });
+    await loadAdminUsers();
+  }catch(error){
+    alert(error.message);
+  }
+}
+
+initAuth();
 </script>
 
 <div class="modal-backdrop" id="coinModal" onclick="closeCoinModal(event)">

@@ -20,5 +20,14 @@
   "observability": {
     "enabled": true
   },
-  "upload_source_maps": true
+  "upload_source_maps": true,
+  "d1_databases": [
+    {
+      "binding": "sihirbaz_ai_db",
+      "database_name": "sihirbaz-ai-db",
+      "database_id": "b6fe8f4f-0d28-4f8b-a1ac-97fe853b9710",
+      "migrations_dir": "migrations"
+    }
+  ]
+
 }

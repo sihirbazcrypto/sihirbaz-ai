@@ -1,6 +1,8 @@
 
 type AppEnv = Env & {
   AI: Ai;
+  sihirbaz_ai_db: D1Database;
+  ADMIN_SETUP_TOKEN: string;
 };
 type BybitTicker = {
   symbol: string;
@@ -479,11 +481,16 @@ function buildScores(
   };
 }
 
-async function getKlines(symbol: string, interval: "5" | "15" | "60"): Promise<Candle[]> {
+async function getKlines(
+  symbol: string,
+  interval: "1" | "5" | "15" | "60",
+  limit = KLINE_LIMIT,
+): Promise<Candle[]> {
+  const safeLimit = Math.max(1, Math.min(1000, Math.trunc(limit)));
   const result = await bybitFetch<KlineResult>(
     `/v5/market/kline?category=linear&symbol=${encodeURIComponent(
       symbol,
-    )}&interval=${interval}&limit=${KLINE_LIMIT}`,
+    )}&interval=${interval}&limit=${safeLimit}`,
   );
   return parseCandles(result.list);
 }
@@ -580,7 +587,7 @@ async function getDashboard() {
 
   return {
     ok: true,
-    version: "1.1.0",
+    version: "2.0.0",
     exchange: "Bybit Futures",
     sourceType: "cloudflare-worker-live",
     apiSource: "api.bybit.com",
@@ -796,7 +803,7 @@ async function getCoinDetail(symbol: string) {
 
   return {
     ok: true,
-    version: "1.1.0",
+    version: "2.0.0",
     symbol,
     exchange: "Bybit Futures",
     price,
@@ -1076,7 +1083,7 @@ AI KARARI:
   return {
     comment,
     decision,
-    agreement: agreementLabel(detail.side, detail.score, decision),
+    agreement: agreementLabel(detail.side as "long" | "short", detail.score, decision),
   };
 }
 
@@ -1424,9 +1431,700 @@ async function fetchMexcPublic(path: string): Promise<Response> {
 }
 
 
+
+type RadarEvent = {
+  symbol: string;
+  exchange: string;
+  timeframe: "1m" | "5m" | "15m" | "1h";
+  type: string;
+  detail: string;
+  value?: number;
+  direction?: "up" | "down" | "neutral";
+  eventKey: string;
+  time: string;
+};
+
+function pctMove(candles: Candle[], bars = 1): number {
+  if (candles.length <= bars) return 0;
+  const start = candles.at(-(bars + 1))?.close || 0;
+  const end = candles.at(-1)?.close || 0;
+  return start ? ((end - start) / start) * 100 : 0;
+}
+
+function radarVolumeRatio(candles: Candle[], lookback = 20): number {
+  if (candles.length < 3) return 1;
+  const last = candles.at(-1)?.volume || 0;
+  const previous = candles.slice(-(lookback + 1), -1).map((c) => c.volume);
+  const avg = previous.reduce((a, b) => a + b, 0) / Math.max(previous.length, 1);
+  return avg > 0 ? last / avg : 1;
+}
+
+function radarLevels(candles: Candle[], lookback = 20) {
+  const previous = candles.slice(-(lookback + 1), -1);
+  return {
+    resistance: Math.max(...previous.map((c) => c.high)),
+    support: Math.min(...previous.map((c) => c.low)),
+  };
+}
+
+function lastEma(values: number[], period: number): number {
+  return ema(values, period);
+}
+
+function eventTime(): string {
+  return new Date().toLocaleTimeString("tr-TR", {
+    timeZone: "Europe/Istanbul",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+async function getMarketRadar(): Promise<{ ok: true; updatedAt: string; events: RadarEvent[] }> {
+  const tickerResult = await bybitFetch<TickerResult>("/v5/market/tickers?category=linear");
+  const liquid = tickerResult.list
+    .filter((item) => item.symbol.endsWith("USDT") && num(item.turnover24h) >= MIN_TURNOVER)
+    .sort((a, b) => num(b.turnover24h) - num(a.turnover24h))
+    .slice(0, 8);
+
+  const events = (await mapWithConcurrency(liquid, 4, async (ticker) => {
+    const symbol = ticker.symbol;
+    const [c1, c5, c15, c60] = await Promise.all([
+      getKlines(symbol, "1", 80),
+      getKlines(symbol, "5", 220),
+      getKlines(symbol, "15", 220),
+      getKlines(symbol, "60", 220),
+    ]);
+    const now = eventTime();
+    const out: RadarEvent[] = [];
+    const add = (timeframe: RadarEvent["timeframe"], type: string, detail: string, direction: RadarEvent["direction"] = "neutral", value?: number) => {
+      out.push({ symbol, exchange: "Bybit Futures", timeframe, type, detail, direction, value, time: now, eventKey: `${symbol}|Bybit|${timeframe}|${type}` });
+    };
+
+    for (const [tf, candles, bars] of [["1m", c1, 1], ["5m", c1, 5]] as const) {
+      const move = pctMove(candles, bars);
+      if (Math.abs(move) >= 2) add(tf, "% Hareket", `%${Math.abs(move).toFixed(2)} ${move > 0 ? "yükseliş" : "düşüş"}`, move > 0 ? "up" : "down", move);
+    }
+
+    for (const [tf, candles] of [["1m", c1], ["5m", c5], ["15m", c15]] as const) {
+      const ratio = radarVolumeRatio(candles);
+      if (ratio >= 1.5) add(tf, "Hacim Girişi", `Hacim ${ratio.toFixed(2)}x`, "neutral", ratio);
+    }
+
+    for (const [tf, candles] of [["5m", c5], ["15m", c15]] as const) {
+      if (candles.length < 25) continue;
+      const levels = radarLevels(candles);
+      const last = candles.at(-1)!;
+      const prev = candles.at(-2)!;
+      if (last.close > levels.resistance) add(tf, "Direnç Kırılımı", `Direnç ${levels.resistance.toPrecision(7)} üstü kapanış`, "up", last.close);
+      if (last.close < levels.support) add(tf, "Destek Kırılımı", `Destek ${levels.support.toPrecision(7)} altı kapanış`, "down", last.close);
+      const tolerance = Math.max(last.close * 0.0025, Math.abs(last.high - last.low) * 0.35);
+      if (prev.close > levels.resistance && Math.abs(last.low - levels.resistance) <= tolerance && last.close >= levels.resistance) add(tf, "Direnç Retest", "Kırılan direnç üzerinde başarılı retest", "up");
+      if (prev.close < levels.support && Math.abs(last.high - levels.support) <= tolerance && last.close <= levels.support) add(tf, "Destek Retest", "Kırılan destek altında başarılı retest", "down");
+      if (last.high > levels.resistance && last.close < levels.resistance) add(tf, "Sahte Kırılım", "Direnç üstü fitil, seviye altında kapanış", "down");
+      if (last.low < levels.support && last.close > levels.support) add(tf, "Sahte Kırılım", "Destek altı fitil, seviye üstünde kapanış", "up");
+    }
+
+    const close5 = c5.map((c) => c.close);
+    if (close5.length >= 202) {
+      const e50Now = lastEma(close5, 50), e200Now = lastEma(close5, 200);
+      const prior = close5.slice(0, -1);
+      const e50Prev = lastEma(prior, 50), e200Prev = lastEma(prior, 200);
+      const price = close5.at(-1)!;
+      const prevPrice = close5.at(-2)!;
+      if (e50Prev <= e200Prev && e50Now > e200Now) add("5m", "Golden Cross", "EMA50, EMA200 üzerine kesti", "up");
+      if (e50Prev >= e200Prev && e50Now < e200Now) add("5m", "Death Cross", "EMA50, EMA200 altına kesti", "down");
+      const touchTolerance = price * 0.002;
+      if (Math.abs(price - e50Now) <= touchTolerance || (prevPrice < e50Now && price >= e50Now) || (prevPrice > e50Now && price <= e50Now)) add("5m", "EMA50 Teması", `EMA50 ${e50Now.toPrecision(7)} teması/geçişi`, price >= e50Now ? "up" : "down");
+      if (Math.abs(price - e200Now) <= touchTolerance || (prevPrice < e200Now && price >= e200Now) || (prevPrice > e200Now && price <= e200Now)) add("5m", "EMA200 Teması", `EMA200 ${e200Now.toPrecision(7)} teması/geçişi`, price >= e200Now ? "up" : "down");
+    }
+
+    for (const [tf, candles] of [["5m", c5], ["15m", c15], ["1h", c60]] as const) {
+      const value = lastRsi(candles.map((c) => c.close));
+      if (value >= 70) add(tf, "RSI Aşırı Alım", `RSI ${value.toFixed(1)} — 70 üzeri`, "down", value);
+      if (value <= 30) add(tf, "RSI Aşırı Satım", `RSI ${value.toFixed(1)} — 30 altı`, "up", value);
+    }
+    return out;
+  })).flat();
+
+  return { ok: true, updatedAt: eventTime(), events };
+}
+
+type AuthUser = {
+  id: number;
+  email: string;
+  display_name: string;
+  role: "admin" | "member";
+  status: "pending" | "approved" | "rejected" | "suspended";
+};
+
+const SESSION_COOKIE = "sihirbaz_session";
+const SESSION_DAYS = 14;
+const PBKDF2_ITERATIONS = 210_000;
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const binary = atob(value);
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+}
+
+async function sha256Base64(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(value),
+  );
+  return bytesToBase64(new Uint8Array(digest));
+}
+
+async function hashPassword(
+  password: string,
+  saltBase64?: string,
+): Promise<{ hash: string; salt: string }> {
+  const salt = saltBase64
+    ? base64ToBytes(saltBase64)
+    : crypto.getRandomValues(new Uint8Array(16));
+
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(password),
+    "PBKDF2",
+    false,
+    ["deriveBits"],
+  );
+
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      salt,
+      iterations: PBKDF2_ITERATIONS,
+      hash: "SHA-256",
+    },
+    key,
+    256,
+  );
+
+  return {
+    hash: bytesToBase64(new Uint8Array(bits)),
+    salt: bytesToBase64(salt),
+  };
+}
+
+function constantTimeEqual(a: string, b: string): boolean {
+  const left = new TextEncoder().encode(a);
+  const right = new TextEncoder().encode(b);
+  if (left.length !== right.length) return false;
+
+  let result = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    result |= left[index] ^ right[index];
+  }
+  return result === 0;
+}
+
+function parseCookies(request: Request): Record<string, string> {
+  const header = request.headers.get("cookie") || "";
+  return Object.fromEntries(
+    header
+      .split(";")
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((part) => {
+        const separator = part.indexOf("=");
+        return separator === -1
+          ? [part, ""]
+          : [
+              decodeURIComponent(part.slice(0, separator)),
+              decodeURIComponent(part.slice(separator + 1)),
+            ];
+      }),
+  );
+}
+
+function sessionCookie(
+  request: Request,
+  token: string,
+  maxAgeSeconds: number,
+): string {
+  const requestUrl = new URL(request.url);
+  const isLocal = requestUrl.hostname === "127.0.0.1" || requestUrl.hostname === "localhost";
+  const secure = !isLocal && requestUrl.protocol === "https:" ? "; Secure" : "";
+  return `${SESSION_COOKIE}=${encodeURIComponent(
+    token,
+  )}; HttpOnly${secure}; SameSite=Lax; Path=/; Max-Age=${maxAgeSeconds}`;
+}
+
+function authJson(
+  data: unknown,
+  status = 200,
+  headers?: HeadersInit,
+): Response {
+  const responseHeaders = new Headers(headers);
+  responseHeaders.set("content-type", "application/json; charset=utf-8");
+  responseHeaders.set("cache-control", "no-store");
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: responseHeaders,
+  });
+}
+
+async function readSession(
+  request: Request,
+  env: AppEnv,
+): Promise<AuthUser | null> {
+  const token = parseCookies(request)[SESSION_COOKIE];
+  if (!token) return null;
+
+  const tokenHash = await sha256Base64(token);
+  const row = await env.sihirbaz_ai_db
+    .prepare(
+      `SELECT
+         u.id, u.email, u.display_name, u.role, u.status
+       FROM sessions s
+       JOIN users u ON u.id = s.user_id
+       WHERE s.token_hash = ?
+         AND s.expires_at > CURRENT_TIMESTAMP
+       LIMIT 1`,
+    )
+    .bind(tokenHash)
+    .first<AuthUser>();
+
+  if (!row || row.status !== "approved") return null;
+
+  await env.sihirbaz_ai_db
+    .prepare(
+      `UPDATE sessions
+       SET last_seen_at = CURRENT_TIMESTAMP
+       WHERE token_hash = ?`,
+    )
+    .bind(tokenHash)
+    .run();
+
+  return row;
+}
+
+async function createSession(
+  request: Request,
+  env: AppEnv,
+  userId: number,
+): Promise<string> {
+  const token = bytesToBase64(
+    crypto.getRandomValues(new Uint8Array(32)),
+  );
+  const tokenHash = await sha256Base64(token);
+  const expiresAt = new Date(
+    Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
+
+  await env.sihirbaz_ai_db
+    .prepare(
+      `INSERT INTO sessions
+       (user_id, token_hash, expires_at, user_agent, ip_hint)
+       VALUES (?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      userId,
+      tokenHash,
+      expiresAt,
+      request.headers.get("user-agent")?.slice(0, 300) || null,
+      request.headers.get("cf-connecting-ip")?.slice(0, 64) || null,
+    )
+    .run();
+
+  return token;
+}
+
+async function requireUser(
+  request: Request,
+  env: AppEnv,
+): Promise<AuthUser | Response> {
+  const user = await readSession(request, env);
+  return user || authJson({ ok: false, error: "Oturum gerekli" }, 401);
+}
+
+async function requireAdmin(
+  request: Request,
+  env: AppEnv,
+): Promise<AuthUser | Response> {
+  const user = await readSession(request, env);
+  if (!user) return authJson({ ok: false, error: "Oturum gerekli" }, 401);
+  if (user.role !== "admin") {
+    return authJson({ ok: false, error: "Yönetici yetkisi gerekli" }, 403);
+  }
+  return user;
+}
+
+async function audit(
+  env: AppEnv,
+  actorUserId: number | null,
+  action: string,
+  targetUserId: number | null,
+  metadata: unknown = null,
+): Promise<void> {
+  await env.sihirbaz_ai_db
+    .prepare(
+      `INSERT INTO audit_logs
+       (actor_user_id, action, target_user_id, metadata_json)
+       VALUES (?, ?, ?, ?)`,
+    )
+    .bind(
+      actorUserId,
+      action,
+      targetUserId,
+      metadata === null ? null : JSON.stringify(metadata),
+    )
+    .run();
+}
+
+function validEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function validPassword(value: string): boolean {
+  return value.length >= 10 && value.length <= 128;
+}
+
+async function handleAuthRoutes(
+  request: Request,
+  env: AppEnv,
+  url: URL,
+): Promise<Response | null> {
+  if (url.pathname === "/api/auth/me" && request.method === "GET") {
+    const user = await readSession(request, env);
+    return authJson({ ok: true, authenticated: Boolean(user), user });
+  }
+
+  if (url.pathname === "/api/auth/register" && request.method === "POST") {
+    const body = await request.json<{
+      email?: string;
+      displayName?: string;
+      password?: string;
+    }>();
+
+    const email = String(body.email || "").trim().toLowerCase();
+    const displayName = String(body.displayName || "").trim().slice(0, 80);
+    const password = String(body.password || "");
+
+    if (!validEmail(email)) {
+      return authJson({ ok: false, error: "Geçerli e-posta girin" }, 400);
+    }
+    if (displayName.length < 2) {
+      return authJson({ ok: false, error: "Ad en az 2 karakter olmalı" }, 400);
+    }
+    if (!validPassword(password)) {
+      return authJson(
+        { ok: false, error: "Şifre en az 10 karakter olmalı" },
+        400,
+      );
+    }
+
+    const existing = await env.sihirbaz_ai_db
+      .prepare("SELECT id FROM users WHERE email = ? LIMIT 1")
+      .bind(email)
+      .first<{ id: number }>();
+
+    if (existing) {
+      return authJson({ ok: false, error: "Bu e-posta zaten kayıtlı" }, 409);
+    }
+
+    const passwordData = await hashPassword(password);
+    const result = await env.sihirbaz_ai_db
+      .prepare(
+        `INSERT INTO users
+         (email, display_name, password_hash, password_salt, role, status)
+         VALUES (?, ?, ?, ?, 'member', 'pending')`,
+      )
+      .bind(
+        email,
+        displayName,
+        passwordData.hash,
+        passwordData.salt,
+      )
+      .run();
+
+    await audit(
+      env,
+      null,
+      "user_registered",
+      Number(result.meta.last_row_id),
+      { email },
+    );
+
+    return authJson({
+      ok: true,
+      status: "pending",
+      message: "Başvurunuz yönetici onayına gönderildi.",
+    });
+  }
+
+  if (url.pathname === "/api/auth/login" && request.method === "POST") {
+    const body = await request.json<{ email?: string; password?: string }>();
+    const email = String(body.email || "").trim().toLowerCase();
+    const password = String(body.password || "");
+
+    const user = await env.sihirbaz_ai_db
+      .prepare(
+        `SELECT id, email, display_name, password_hash, password_salt,
+                role, status
+         FROM users
+         WHERE email = ?
+         LIMIT 1`,
+      )
+      .bind(email)
+      .first<
+        AuthUser & {
+          password_hash: string;
+          password_salt: string;
+        }
+      >();
+
+    if (!user) {
+      return authJson({ ok: false, error: "E-posta veya şifre hatalı" }, 401);
+    }
+
+    const calculated = await hashPassword(password, user.password_salt);
+    if (!constantTimeEqual(calculated.hash, user.password_hash)) {
+      return authJson({ ok: false, error: "E-posta veya şifre hatalı" }, 401);
+    }
+
+    if (user.status === "pending") {
+      return authJson(
+        { ok: false, error: "Üyeliğiniz yönetici onayı bekliyor" },
+        403,
+      );
+    }
+    if (user.status !== "approved") {
+      return authJson(
+        { ok: false, error: "Hesabınız erişime kapalı" },
+        403,
+      );
+    }
+
+    const token = await createSession(request, env, user.id);
+    await env.sihirbaz_ai_db
+      .prepare(
+        `UPDATE users
+         SET last_login_at = CURRENT_TIMESTAMP,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+      )
+      .bind(user.id)
+      .run();
+
+    await audit(env, user.id, "login", user.id);
+
+    return authJson(
+      {
+        ok: true,
+        user: {
+          id: user.id,
+          email: user.email,
+          display_name: user.display_name,
+          role: user.role,
+          status: user.status,
+        },
+      },
+      200,
+      {
+        "set-cookie": sessionCookie(
+          request,
+          token,
+          SESSION_DAYS * 24 * 60 * 60,
+        ),
+      },
+    );
+  }
+
+  if (url.pathname === "/api/auth/logout" && request.method === "POST") {
+    const token = parseCookies(request)[SESSION_COOKIE];
+    if (token) {
+      const tokenHash = await sha256Base64(token);
+      await env.sihirbaz_ai_db
+        .prepare("DELETE FROM sessions WHERE token_hash = ?")
+        .bind(tokenHash)
+        .run();
+    }
+    return authJson(
+      { ok: true },
+      200,
+      { "set-cookie": sessionCookie(request, "", 0) },
+    );
+  }
+
+  if (
+    url.pathname === "/api/auth/bootstrap-admin" &&
+    request.method === "POST"
+  ) {
+    const supplied = request.headers.get("x-setup-token") || "";
+    if (!env.ADMIN_SETUP_TOKEN || supplied !== env.ADMIN_SETUP_TOKEN) {
+      return authJson({ ok: false, error: "Kurulum anahtarı hatalı" }, 403);
+    }
+
+    const countRow = await env.sihirbaz_ai_db
+      .prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'admin'")
+      .first<{ count: number }>();
+
+    if ((countRow?.count || 0) > 0) {
+      return authJson({ ok: false, error: "Yönetici zaten oluşturulmuş" }, 409);
+    }
+
+    const body = await request.json<{
+      email?: string;
+      displayName?: string;
+      password?: string;
+    }>();
+    const email = String(body.email || "").trim().toLowerCase();
+    const displayName = String(body.displayName || "").trim().slice(0, 80);
+    const password = String(body.password || "");
+
+    if (!validEmail(email) || displayName.length < 2 || !validPassword(password)) {
+      return authJson({ ok: false, error: "Yönetici bilgileri geçersiz" }, 400);
+    }
+
+    const passwordData = await hashPassword(password);
+    const result = await env.sihirbaz_ai_db
+      .prepare(
+        `INSERT INTO users
+         (email, display_name, password_hash, password_salt,
+          role, status, approved_at)
+         VALUES (?, ?, ?, ?, 'admin', 'approved', CURRENT_TIMESTAMP)`,
+      )
+      .bind(email, displayName, passwordData.hash, passwordData.salt)
+      .run();
+
+    await audit(
+      env,
+      Number(result.meta.last_row_id),
+      "admin_bootstrapped",
+      Number(result.meta.last_row_id),
+    );
+
+    return authJson({ ok: true, message: "İlk yönetici oluşturuldu" });
+  }
+
+  if (url.pathname === "/api/admin/users" && request.method === "GET") {
+    const admin = await requireAdmin(request, env);
+    if (admin instanceof Response) return admin;
+
+    const result = await env.sihirbaz_ai_db
+      .prepare(
+        `SELECT id, email, display_name, role, status,
+                created_at, approved_at, last_login_at
+         FROM users
+         ORDER BY
+           CASE status WHEN 'pending' THEN 0 ELSE 1 END,
+           created_at DESC
+         LIMIT 500`,
+      )
+      .all();
+
+    return authJson({ ok: true, users: result.results });
+  }
+
+  if (
+    url.pathname.startsWith("/api/admin/users/") &&
+    request.method === "PATCH"
+  ) {
+    const admin = await requireAdmin(request, env);
+    if (admin instanceof Response) return admin;
+
+    const targetId = Number(url.pathname.split("/").at(-1));
+    if (!Number.isInteger(targetId) || targetId <= 0) {
+      return authJson({ ok: false, error: "Kullanıcı ID geçersiz" }, 400);
+    }
+
+    const body = await request.json<{
+      status?: "pending" | "approved" | "rejected" | "suspended";
+      role?: "admin" | "member";
+    }>();
+
+    if (targetId === admin.id && body.status && body.status !== "approved") {
+      return authJson(
+        { ok: false, error: "Kendi yönetici hesabınızı kapatamazsınız" },
+        400,
+      );
+    }
+
+    if (body.status) {
+      await env.sihirbaz_ai_db
+        .prepare(
+          `UPDATE users
+           SET status = ?,
+               approved_by = CASE WHEN ? = 'approved' THEN ? ELSE approved_by END,
+               approved_at = CASE WHEN ? = 'approved' THEN CURRENT_TIMESTAMP ELSE approved_at END,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+        )
+        .bind(
+          body.status,
+          body.status,
+          admin.id,
+          body.status,
+          targetId,
+        )
+        .run();
+
+      if (body.status !== "approved") {
+        await env.sihirbaz_ai_db
+          .prepare("DELETE FROM sessions WHERE user_id = ?")
+          .bind(targetId)
+          .run();
+      }
+    }
+
+    if (body.role) {
+      await env.sihirbaz_ai_db
+        .prepare(
+          `UPDATE users
+           SET role = ?, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+        )
+        .bind(body.role, targetId)
+        .run();
+    }
+
+    await audit(env, admin.id, "user_updated", targetId, body);
+    return authJson({ ok: true });
+  }
+
+  return null;
+}
+
+function isProtectedApi(pathname: string): boolean {
+  return (
+    pathname === "/api/dashboard" ||
+    pathname === "/api/coin" ||
+    pathname === "/api/ai-comment" ||
+    pathname === "/api/ai-packet" ||
+    pathname === "/api/mexc-proxy" ||
+    pathname === "/api/radar"
+  );
+}
+
 export default {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url);
+
+    const authResponse = await handleAuthRoutes(request, env, url);
+    if (authResponse) return authResponse;
+
+    if (isProtectedApi(url.pathname)) {
+      const user = await requireUser(request, env);
+      if (user instanceof Response) return user;
+    }
+
+
+    if (url.pathname === "/api/radar") {
+      try {
+        return json(await getMarketRadar());
+      } catch (error) {
+        return json({ ok: false, error: error instanceof Error ? error.message : "Radar verisi alınamadı" }, 502);
+      }
+    }
 
     if (url.pathname === "/api/dashboard") {
       try {
@@ -1603,7 +2301,7 @@ ${JSON.stringify(packet.marketPacket)}
       return json({
         ok: true,
         service: "sihirbaz-ai",
-        version: "1.1.0",
+        version: "2.0.0",
         time: new Date().toISOString(),
       });
     }
