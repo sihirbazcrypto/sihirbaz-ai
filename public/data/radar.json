@@ -1,12 +1,12 @@
 {
   "ok": true,
   "version": "2.3.0",
-  "updatedAt": "02:34:49",
-  "generatedAt": "2026-09-13T23:34:49.353Z",
-  "scanDurationMs": 2464,
+  "updatedAt": "04:35:24",
+  "generatedAt": "2026-09-14T01:35:24.156Z",
+  "scanDurationMs": 2207,
   "scannedThisRound": 8,
-  "totalUniverse": 34,
-  "activeEvents": 4,
+  "totalUniverse": 36,
+  "activeEvents": 0,
   "exchanges": {
     "Binance": {
       "universe": 0,
@@ -21,7 +21,7 @@
       "error": "403 Forbidden"
     },
     "MEXC": {
-      "universe": 34,
+      "universe": 36,
       "scanned": 8,
       "cursor": 26,
       "ok": true,
@@ -33,61 +33,5 @@
     "batchPerExchange": 8,
     "eventTtlMs": 1200000
   },
-  "events": [
-    {
-      "symbol": "ONDOUSDT",
-      "exchange": "MEXC Futures",
-      "timeframe": "15m",
-      "type": "RSI Aşırı Satım",
-      "detail": "RSI 21.3 — 30 altı",
-      "direction": "up",
-      "value": 21.25984251968525,
-      "time": "02:34:49",
-      "createdAt": 1789342489350,
-      "eventKey": "ONDOUSDT|MEXC Futures|15m|RSI Aşırı Satım",
-      "eventPrice": 0.3436
-    },
-    {
-      "symbol": "ADAUSDT",
-      "exchange": "MEXC Futures",
-      "timeframe": "15m",
-      "type": "RSI Aşırı Satım",
-      "detail": "RSI 29.9 — 30 altı",
-      "direction": "up",
-      "value": 29.89690721649474,
-      "time": "02:34:49",
-      "createdAt": 1789342489349,
-      "eventKey": "ADAUSDT|MEXC Futures|15m|RSI Aşırı Satım",
-      "eventPrice": 0.2042
-    },
-    {
-      "symbol": "ARBUSDT",
-      "exchange": "MEXC Futures",
-      "timeframe": "15m",
-      "type": "RSI Aşırı Satım",
-      "detail": "RSI 23.6 — 30 altı",
-      "direction": "up",
-      "value": 23.553162853297408,
-      "time": "02:34:49",
-      "createdAt": 1789342489295,
-      "eventKey": "ARBUSDT|MEXC Futures|15m|RSI Aşırı Satım",
-      "eventPrice": 0.13362
-    },
-    {
-      "symbol": "SKHYNIXSTOCKUSDT",
-      "exchange": "MEXC Futures",
-      "timeframe": "5m",
-      "type": "EMA200 Teması",
-      "detail": "EMA200 1302.980 teması/geçişi",
-      "direction": "up",
-      "value": 1305.44,
-      "time": "02:34:49",
-      "createdAt": 1789342489350,
-      "eventKey": "SKHYNIXSTOCKUSDT|MEXC Futures|5m|EMA200 Teması",
-      "ema50": 1296.735944388277,
-      "ema200": 1302.9795157676813,
-      "eventPrice": 1305.44,
-      "eventCandleTime": 1789342200000
-    }
-  ]
+  "events": []
 }
