@@ -1,12 +1,12 @@
 {
   "ok": true,
   "version": "2.3.0",
-  "updatedAt": "04:35:24",
-  "generatedAt": "2026-09-14T01:35:24.156Z",
-  "scanDurationMs": 2207,
+  "updatedAt": "10:02:08",
+  "generatedAt": "2026-09-14T07:02:08.937Z",
+  "scanDurationMs": 2283,
   "scannedThisRound": 8,
-  "totalUniverse": 36,
-  "activeEvents": 0,
+  "totalUniverse": 38,
+  "activeEvents": 8,
   "exchanges": {
     "Binance": {
       "universe": 0,
@@ -21,7 +21,7 @@
       "error": "403 Forbidden"
     },
     "MEXC": {
-      "universe": 36,
+      "universe": 38,
       "scanned": 8,
       "cursor": 26,
       "ok": true,
@@ -33,5 +33,125 @@
     "batchPerExchange": 8,
     "eventTtlMs": 1200000
   },
-  "events": []
+  "events": [
+    {
+      "symbol": "ONDOUSDT",
+      "exchange": "MEXC Futures",
+      "timeframe": "15m",
+      "type": "RSI Aşırı Alım",
+      "detail": "RSI 76.9 — 70 üzeri",
+      "direction": "down",
+      "value": 76.8518518518519,
+      "time": "10:02:08",
+      "createdAt": 1789369328932,
+      "eventKey": "ONDOUSDT|MEXC Futures|15m|RSI Aşırı Alım",
+      "eventPrice": 0.3557
+    },
+    {
+      "symbol": "UNIUSDT",
+      "exchange": "MEXC Futures",
+      "timeframe": "15m",
+      "type": "RSI Aşırı Satım",
+      "detail": "RSI 26.7 — 30 altı",
+      "direction": "up",
+      "value": 26.694915254237188,
+      "time": "10:02:08",
+      "createdAt": 1789369328931,
+      "eventKey": "UNIUSDT|MEXC Futures|15m|RSI Aşırı Satım",
+      "eventPrice": 6.295
+    },
+    {
+      "symbol": "NEARUSDT",
+      "exchange": "MEXC Futures",
+      "timeframe": "15m",
+      "type": "RSI Aşırı Alım",
+      "detail": "RSI 70.7 — 70 üzeri",
+      "direction": "down",
+      "value": 70.67669172932307,
+      "time": "10:02:08",
+      "createdAt": 1789369328569,
+      "eventKey": "NEARUSDT|MEXC Futures|15m|RSI Aşırı Alım",
+      "eventPrice": 2.429
+    },
+    {
+      "symbol": "ENAUSDT",
+      "exchange": "MEXC Futures",
+      "timeframe": "5m",
+      "type": "EMA50 Teması",
+      "detail": "EMA50 0.1403534 teması/geçişi",
+      "direction": "down",
+      "value": 0.1403,
+      "time": "10:02:08",
+      "createdAt": 1789369328935,
+      "eventKey": "ENAUSDT|MEXC Futures|5m|EMA50 Teması",
+      "ema50": 0.1403533990411847,
+      "ema200": 0.13940475922752638,
+      "eventPrice": 0.1403,
+      "eventCandleTime": 1789369200000
+    },
+    {
+      "symbol": "ENAUSDT",
+      "exchange": "MEXC Futures",
+      "timeframe": "15m",
+      "type": "EMA200 Teması",
+      "detail": "EMA200 0.1405717 teması/geçişi",
+      "direction": "down",
+      "value": 0.1403,
+      "time": "10:02:08",
+      "createdAt": 1789369328935,
+      "eventKey": "ENAUSDT|MEXC Futures|15m|EMA200 Teması",
+      "ema50": 0.13966194325142448,
+      "ema200": 0.14057173107683082,
+      "eventPrice": 0.1403,
+      "eventCandleTime": 1789369200000
+    },
+    {
+      "symbol": "LINKUSDT",
+      "exchange": "MEXC Futures",
+      "timeframe": "5m",
+      "type": "EMA50 Teması",
+      "detail": "EMA50 11.38606 teması/geçişi",
+      "direction": "up",
+      "value": 11.397,
+      "time": "10:02:08",
+      "createdAt": 1789369328933,
+      "eventKey": "LINKUSDT|MEXC Futures|5m|EMA50 Teması",
+      "ema50": 11.386059677750605,
+      "ema200": 11.34409415785847,
+      "eventPrice": 11.397,
+      "eventCandleTime": 1789369200000
+    },
+    {
+      "symbol": "UNIUSDT",
+      "exchange": "MEXC Futures",
+      "timeframe": "15m",
+      "type": "EMA50 Teması",
+      "detail": "EMA50 6.296013 teması/geçişi",
+      "direction": "down",
+      "value": 6.295,
+      "time": "10:02:08",
+      "createdAt": 1789369328931,
+      "eventKey": "UNIUSDT|MEXC Futures|15m|EMA50 Teması",
+      "ema50": 6.29601266236543,
+      "ema200": 6.301609736198969,
+      "eventPrice": 6.295,
+      "eventCandleTime": 1789369200000
+    },
+    {
+      "symbol": "UNIUSDT",
+      "exchange": "MEXC Futures",
+      "timeframe": "15m",
+      "type": "EMA200 Teması",
+      "detail": "EMA200 6.301610 teması/geçişi",
+      "direction": "down",
+      "value": 6.295,
+      "time": "10:02:08",
+      "createdAt": 1789369328931,
+      "eventKey": "UNIUSDT|MEXC Futures|15m|EMA200 Teması",
+      "ema50": 6.29601266236543,
+      "ema200": 6.301609736198969,
+      "eventPrice": 6.295,
+      "eventCandleTime": 1789369200000
+    }
+  ]
 }
